@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Sistema de Gestão de Estoque (WMS)",
+  "description": "Um sistema completo para gestão de fluxo logístico interno, desde o recebimento até a expedição, com controle por etiquetas, rastreabilidade e gestão de armazém.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
