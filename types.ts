@@ -132,3 +132,18 @@ export interface PalletConsolidado {
   quantidadeCaixasTotal: number;
   skusContidos: string[]; // array de IDs de SKU
 }
+
+export enum DivergenciaTipo {
+    AVARIA = 'Avaria',
+    FALTA = 'Falta',
+    SOBRA = 'Sobra',
+}
+
+export interface Divergencia {
+    id: string;
+    recebimentoId: string;
+    skuId: string;
+    tipo: DivergenciaTipo;
+    quantidade: number;
+    observacao?: string;
+}

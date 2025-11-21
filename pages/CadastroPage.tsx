@@ -1,9 +1,11 @@
-
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { SKU, Endereco, EnderecoTipo, Industria } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
+import ImportExcelModal from '../components/ImportExcelModal';
+
+declare const XLSX: any;
 
 const CadastroPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('enderecos');
@@ -39,8 +41,9 @@ const CadastroPage: React.FC = () => {
 
 // CadastroEnderecos Component
 const CadastroEnderecos: React.FC = () => {
-    const { enderecos, addEndereco, updateEndereco, deleteEndereco } = useWMS();
+    const { enderecos, addEndereco, updateEndereco, deleteEndereco, addEnderecosBatch } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentEndereco, setCurrentEndereco] = useState<Partial<Endereco> | null>(null);
 
     const openModal = (endereco: Partial<Endereco> | null = null) => {
@@ -61,14 +64,46 @@ const CadastroEnderecos: React.FC = () => {
         }
         closeModal();
     };
+
+    const handleImport = (data: any[]) => {
+        addEnderecosBatch(data);
+        alert(`${data.length} endereços importados com sucesso!`);
+    };
+
+    const handleDownloadTemplate = () => {
+        const headers = ['codigo', 'nome', 'altura', 'capacidade', 'tipo'];
+        const exampleData = [['A-01-01', 'Rua A Módulo 01 Nível 01', 2.5, 1, 'Armazenagem']];
+        
+        const dataToExport = [headers, ...exampleData];
+        const ws = XLSX.utils.aoa_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Modelo_Enderecos");
+        XLSX.writeFile(wb, "modelo_cadastro_enderecos.xlsx");
+    };
+
+    const enderecoColumnConfig = {
+        codigo: { type: 'string', required: true },
+        nome: { type: 'string', required: true },
+        altura: { type: 'number', required: true },
+        capacidade: { type: 'number', required: true },
+        tipo: { type: 'string', required: true, enum: Object.values(EnderecoTipo) },
+    };
     
     return (
         <div>
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Gerenciar Endereços</h2>
-                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
-                    <PlusIcon className="h-5 w-5 mr-2" /> Novo Endereço
-                </button>
+                <div className="flex space-x-2">
+                    <button onClick={handleDownloadTemplate} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">
+                        <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Baixar Modelo
+                    </button>
+                    <button onClick={() => setIsImportModalOpen(true)} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700">
+                        <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Importar Excel
+                    </button>
+                    <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                        <PlusIcon className="h-5 w-5 mr-2" /> Novo Endereço
+                    </button>
+                </div>
             </div>
             {/* Table */}
              <div className="overflow-x-auto">
@@ -105,6 +140,7 @@ const CadastroEnderecos: React.FC = () => {
                 </table>
             </div>
             {isModalOpen && <EnderecoModal endereco={currentEndereco} onSave={handleSave} onClose={closeModal} />}
+            {isImportModalOpen && <ImportExcelModal title="Importar Endereços" columnConfig={enderecoColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
 }
@@ -171,8 +207,9 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
 
 // CadastroSKUs Component
 const CadastroSKUs: React.FC = () => {
-    const { skus, addSku, updateSku, deleteSku } = useWMS();
+    const { skus, addSku, updateSku, deleteSku, addSkusBatch } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentSku, setCurrentSku] = useState<Partial<SKU> | null>(null);
 
     const openModal = (sku: Partial<SKU> | null = null) => {
@@ -202,15 +239,63 @@ const CadastroSKUs: React.FC = () => {
             }
         }
     };
+    
+    const handleImport = (data: any[]) => {
+        addSkusBatch(data);
+        alert(`${data.length} SKUs importados com sucesso!`);
+    };
+
+    const handleDownloadTemplate = () => {
+        const headers = [
+            'sku', 'descritivo', 'totalCaixas', 'tempoVida', 'peso', 
+            'qtdPorCamada', 'camadaPorLastro', 'sre1', 'sre2', 'sre3', 
+            'sre4', 'sre5', 'classificacao', 'familia'
+        ];
+        const exampleData = [[
+            'SKU001', 'Produto Exemplo', 100, 365, 12.5, 
+            20, 5, 'A', 'B', '', '', '', 'Alimento', 'Congelado'
+        ]];
+        
+        const dataToExport = [headers, ...exampleData];
+        const ws = XLSX.utils.aoa_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Modelo_SKUs");
+        XLSX.writeFile(wb, "modelo_cadastro_skus.xlsx");
+    };
+
+    const skuColumnConfig = {
+        sku: { type: 'string', required: true },
+        descritivo: { type: 'string', required: true },
+        totalCaixas: { type: 'number', required: true },
+        tempoVida: { type: 'number', required: true },
+        peso: { type: 'number', required: true },
+        qtdPorCamada: { type: 'number', required: true },
+        camadaPorLastro: { type: 'number', required: true },
+        sre1: { type: 'string', required: false },
+        sre2: { type: 'string', required: false },
+        sre3: { type: 'string', required: false },
+        sre4: { type: 'string', required: false },
+        sre5: { type: 'string', required: false },
+        classificacao: { type: 'string', required: true },
+        familia: { type: 'string', required: true },
+    };
 
 
     return (
          <div>
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Gerenciar SKUs</h2>
-                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
-                    <PlusIcon className="h-5 w-5 mr-2" /> Novo SKU
-                </button>
+                <div className="flex space-x-2">
+                    <button onClick={handleDownloadTemplate} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">
+                        <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Baixar Modelo
+                    </button>
+                     <button onClick={() => setIsImportModalOpen(true)} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700">
+                        <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Importar Excel
+                    </button>
+                    <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                        <PlusIcon className="h-5 w-5 mr-2" /> Novo SKU
+                    </button>
+                </div>
             </div>
             {/* Table */}
              <div className="overflow-x-auto">
@@ -239,14 +324,16 @@ const CadastroSKUs: React.FC = () => {
                 </table>
             </div>
             {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} />}
+            {isImportModalOpen && <ImportExcelModal title="Importar SKUs" columnConfig={skuColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
 }
 
 // CadastroIndustrias Component
 const CadastroIndustrias: React.FC = () => {
-    const { industrias, addIndustria, updateIndustria, deleteIndustria } = useWMS();
+    const { industrias, addIndustria, updateIndustria, deleteIndustria, addIndustriasBatch } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentIndustria, setCurrentIndustria] = useState<Partial<Industria> | null>(null);
 
     const openModal = (industria: Partial<Industria> | null = null) => {
@@ -276,14 +363,42 @@ const CadastroIndustrias: React.FC = () => {
             }
         }
     }
+    
+    const handleImport = (data: any[]) => {
+        addIndustriasBatch(data);
+        alert(`${data.length} indústrias importadas com sucesso!`);
+    };
+
+    const handleDownloadTemplate = () => {
+        const headers = ['nome'];
+        const exampleData = [['Indústria Exemplo S.A.']];
+        
+        const dataToExport = [headers, ...exampleData];
+        const ws = XLSX.utils.aoa_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Modelo_Industrias");
+        XLSX.writeFile(wb, "modelo_cadastro_industrias.xlsx");
+    };
+
+    const industriaColumnConfig = {
+        nome: { type: 'string', required: true },
+    };
 
     return (
         <div>
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Gerenciar Indústrias/Fornecedores</h2>
-                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
-                    <PlusIcon className="h-5 w-5 mr-2" /> Nova Indústria
-                </button>
+                 <div className="flex space-x-2">
+                    <button onClick={handleDownloadTemplate} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">
+                        <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Baixar Modelo
+                    </button>
+                     <button onClick={() => setIsImportModalOpen(true)} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700">
+                        <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Importar Excel
+                    </button>
+                    <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                        <PlusIcon className="h-5 w-5 mr-2" /> Nova Indústria
+                    </button>
+                </div>
             </div>
              <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -307,6 +422,7 @@ const CadastroIndustrias: React.FC = () => {
                 </table>
             </div>
             {isModalOpen && <IndustriaModal industria={currentIndustria} onSave={handleSave} onClose={closeModal} />}
+            {isImportModalOpen && <ImportExcelModal title="Importar Indústrias" columnConfig={industriaColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
 }

@@ -1,24 +1,28 @@
 
 import React, { createContext, useContext } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria } from '../types';
+import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo } from '../types';
 
 interface WMSContextType {
     skus: SKU[];
     addSku: (sku: Omit<SKU, 'id'>) => SKU;
+    addSkusBatch: (skus: Omit<SKU, 'id'>[]) => void;
     updateSku: (sku: SKU) => void;
     deleteSku: (id: string) => boolean;
     enderecos: Endereco[];
     addEndereco: (endereco: Omit<Endereco, 'id' | 'ocupado'>) => void;
+    addEnderecosBatch: (enderecos: Omit<Endereco, 'id' | 'ocupado'>[]) => void;
     updateEndereco: (endereco: Endereco) => void;
     deleteEndereco: (id: string) => void;
     updateEnderecoOcupacao: (id: string, ocupado: boolean) => void;
     industrias: Industria[];
     addIndustria: (industria: Omit<Industria, 'id'>) => Industria;
+    addIndustriasBatch: (industrias: Omit<Industria, 'id'>[]) => void;
     updateIndustria: (industria: Industria) => void;
     deleteIndustria: (id: string) => boolean;
     recebimentos: Recebimento[];
     addRecebimento: (recebimentoData: Omit<Recebimento, 'id'>, etiquetasCount: number) => { newRecebimento: Recebimento, newEtiquetas: Etiqueta[] };
+    updateRecebimento: (recebimento: Recebimento) => void;
     etiquetas: Etiqueta[];
     getEtiquetaById: (id: string) => Etiqueta | undefined;
     updateEtiqueta: (etiqueta: Etiqueta) => void;
@@ -34,6 +38,10 @@ interface WMSContextType {
     createPickingMissions: (pedido: Pedido) => void;
     palletsConsolidados: PalletConsolidado[];
     addPalletConsolidado: (pallet: Omit<PalletConsolidado, 'id'>) => PalletConsolidado;
+    divergencias: Divergencia[];
+    getDivergenciasByRecebimento: (recebimentoId: string) => Divergencia[];
+    addDivergencia: (divergencia: Omit<Divergencia, 'id'>) => void;
+    deleteDivergencia: (id: string) => void;
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -47,6 +55,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [missoes, setMissoes] = useLocalStorage<Missao[]>('wms_missoes', []);
     const [palletsConsolidados, setPalletsConsolidados] = useLocalStorage<PalletConsolidado[]>('wms_pallets_consolidados', []);
     const [industrias, setIndustrias] = useLocalStorage<Industria[]>('wms_industrias', []);
+    const [divergencias, setDivergencias] = useLocalStorage<Divergencia[]>('wms_divergencias', []);
 
     const generateId = () => new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -55,6 +64,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const newSku = { ...sku, id: generateId() };
         setSkus(prev => [...prev, newSku]);
         return newSku;
+    };
+    const addSkusBatch = (newSkus: Omit<SKU, 'id'>[]) => {
+        const skusWithIds = newSkus.map(sku => ({ ...sku, id: generateId() }));
+        setSkus(prev => [...prev, ...skusWithIds]);
     };
     const updateSku = (updatedSku: SKU) => setSkus(skus.map(s => s.id === updatedSku.id ? updatedSku : s));
     const deleteSku = (id: string): boolean => {
@@ -69,6 +82,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Endereco Management
     const addEndereco = (endereco: Omit<Endereco, 'id' | 'ocupado'>) => setEnderecos([...enderecos, { ...endereco, id: generateId(), ocupado: false }]);
+    const addEnderecosBatch = (newEnderecos: Omit<Endereco, 'id' | 'ocupado'>[]) => {
+        const enderecosWithIds = newEnderecos.map(end => ({ ...end, id: generateId(), ocupado: false }));
+        setEnderecos(prev => [...prev, ...enderecosWithIds]);
+    };
     const updateEndereco = (updatedEndereco: Endereco) => setEnderecos(enderecos.map(e => e.id === updatedEndereco.id ? updatedEndereco : e));
     const deleteEndereco = (id: string) => setEnderecos(enderecos.filter(e => e.id !== id));
     const updateEnderecoOcupacao = (id: string, ocupado: boolean) => {
@@ -80,6 +97,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const newIndustria = { ...industria, id: generateId() };
         setIndustrias(prev => [...prev, newIndustria]);
         return newIndustria;
+    };
+     const addIndustriasBatch = (newIndustrias: Omit<Industria, 'id'>[]) => {
+        const industriasWithIds = newIndustrias.map(ind => ({ ...ind, id: generateId() }));
+        setIndustrias(prev => [...prev, ...industriasWithIds]);
     };
     const updateIndustria = (updatedIndustria: Industria) => setIndustrias(industrias.map(i => i.id === updatedIndustria.id ? updatedIndustria : i));
     const deleteIndustria = (id: string): boolean => {
@@ -97,12 +118,14 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
     // Recebimento Management
-    const addRecebimento = (recebimentoData: Omit<Recebimento, 'id'>, etiquetasCount: number) => {
-        const newRecebimento = { ...recebimentoData, id: generateId() };
+    const addRecebimento = (
+        recebimentoData: Omit<Recebimento, 'id'>, 
+        etiquetasCount: number
+    ) => {
+        const newRecebimento = { ...recebimentoData, id: generateId(), houveAvarias: false };
         
         const nfPart = newRecebimento.notaFiscal.replace(/\D/g, '').slice(-4) || '0000';
         
-        // Find the highest existing number in IDs to prevent duplicates even after deletions
         const lastEtiquetaNum = etiquetas.reduce((max, e) => {
             const parts = e.id.split('-');
             const num = parseInt(parts[parts.length - 1], 10);
@@ -123,6 +146,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         return { newRecebimento, newEtiquetas };
     };
+    
+    const updateRecebimento = (updatedRecebimento: Recebimento) => setRecebimentos(recebimentos.map(r => r.id === updatedRecebimento.id ? updatedRecebimento : r));
+
 
     // Etiqueta Management
     const getEtiquetaById = (id: string) => etiquetas.find(e => e.id === id);
@@ -237,16 +263,28 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return newPallet;
     };
 
+    // Divergencia Management
+    const getDivergenciasByRecebimento = (recebimentoId: string) => divergencias.filter(d => d.recebimentoId === recebimentoId);
+
+    const addDivergencia = (divergenciaData: Omit<Divergencia, 'id'>) => {
+        const newDivergencia = { ...divergenciaData, id: generateId() };
+        setDivergencias(prev => [...prev, newDivergencia]);
+    };
+
+    const deleteDivergencia = (id: string) => {
+        setDivergencias(prev => prev.filter(d => d.id !== id));
+    };
 
     const value = {
-        skus, addSku, updateSku, deleteSku,
-        enderecos, addEndereco, updateEndereco, deleteEndereco, updateEnderecoOcupacao,
-        industrias, addIndustria, updateIndustria, deleteIndustria,
-        recebimentos, addRecebimento,
+        skus, addSku, addSkusBatch, updateSku, deleteSku,
+        enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco, updateEnderecoOcupacao,
+        industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
+        recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
         pedidos, addPedidos,
         missoes, createPickingMissions,
-        palletsConsolidados, addPalletConsolidado
+        palletsConsolidados, addPalletConsolidado,
+        divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

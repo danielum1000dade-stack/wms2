@@ -1,5 +1,5 @@
 import React from 'react';
-import { Recebimento } from '../types';
+import { Recebimento, Divergencia } from '../types';
 import { useWMS } from '../context/WMSContext';
 import { ArrowUturnLeftIcon, PrinterIcon, TableCellsIcon } from '@heroicons/react/24/outline';
 declare const XLSX: any;
@@ -17,8 +17,9 @@ type ResumoSKU = {
 }
 
 const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack }) => {
-    const { getEtiquetasByRecebimento, skus, enderecos } = useWMS();
+    const { getEtiquetasByRecebimento, skus, enderecos, getDivergenciasByRecebimento } = useWMS();
     const etiquetas = getEtiquetasByRecebimento(recebimento.id);
+    const divergencias = getDivergenciasByRecebimento(recebimento.id);
 
     const resumoNF: ResumoSKU[] = etiquetas.reduce((acc, etiqueta) => {
         if (!etiqueta.skuId) return acc;
@@ -165,15 +166,20 @@ const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack
         merges.push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: 3 } });
         merges.push({ s: { r: rowIndex, c: 4 }, e: { r: rowIndex, c: 7 } });
         rowIndex++;
-        ws_data.push(['SKU', 'LOTE', 'QTD', 'OBSERVAÇÃO', 'SKU', 'QTD', 'PESO', null]);
+        ws_data.push(['SKU', 'TIPO', 'QTD', 'OBSERVAÇÃO', 'SKU', 'QTD', 'PESO', null]);
         merges.push({ s: { r: rowIndex, c: 6 }, e: { r: rowIndex, c: 7 } });
         rowIndex++;
         
-        const maxRows = Math.max(4, resumoNF.length);
+        const maxRows = Math.max(4, resumoNF.length, divergencias.length);
         for(let i = 0; i < maxRows; i++) {
             const resumo = resumoNF[i];
+            const divergencia = divergencias[i];
+            const skuDivergencia = divergencia ? skus.find(s => s.id === divergencia.skuId) : null;
             ws_data.push([
-                null, null, null, null, // Divergencias
+                skuDivergencia?.sku || null, // Divergencias
+                divergencia?.tipo || null,
+                divergencia?.quantidade || null,
+                divergencia?.observacao || null,
                 resumo?.sku || null, // Conferencia
                 resumo?.qtd || null,
                 resumo?.peso || null,
@@ -192,7 +198,7 @@ const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack
         merges.push({ s: { r: rowIndex, c: 4 }, e: { r: rowIndex, c: 5 } });
         merges.push({ s: { r: rowIndex, c: 6 }, e: { r: rowIndex, c: 7 } });
         rowIndex++;
-        ws_data.push(['Houve avarias?', '( ) SIM ( ) NÃO', null, null, null, null, null, null]);
+        ws_data.push(['Houve avarias?', recebimento.houveAvarias ? '(X) SIM ( ) NÃO' : '( ) SIM (X) NÃO', null, null, null, null, null, null]);
         merges.push({ s: { r: rowIndex, c: 4 }, e: { r: rowIndex, c: 5 } });
         merges.push({ s: { r: rowIndex, c: 6 }, e: { r: rowIndex, c: 7 } });
         rowIndex++;
@@ -202,7 +208,7 @@ const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack
         ws['!merges'] = merges;
         
         ws['!cols'] = [
-            { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
+            { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 15 },
             { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 15 }
         ];
 
@@ -319,13 +325,24 @@ const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack
                         <table className="w-full border-collapse border border-gray-400 print-table">
                              <thead><tr className="bg-gray-200">
                                 <th className="border border-gray-400 p-1 text-xs font-bold">SKU</th>
-                                <th className="border border-gray-400 p-1 text-xs font-bold">LOTE</th>
+                                <th className="border border-gray-400 p-1 text-xs font-bold">TIPO</th>
                                 <th className="border border-gray-400 p-1 text-xs font-bold">QTD</th>
                                 <th className="border border-gray-400 p-1 text-xs font-bold">OBSERVAÇÃO</th>
                              </tr></thead>
                              <tbody>
-                                {Array.from({ length: 4 }).map((_, i) => (
-                                    <tr key={`div-${i}`}><td className="border border-gray-400 h-6" colSpan={4}></td></tr>
+                                {divergencias.map((div, i) => {
+                                    const sku = skus.find(s => s.id === div.skuId);
+                                    return (
+                                        <tr key={`div-${i}`}>
+                                            <td className="border border-gray-400 p-1 text-center text-xs">{sku?.sku}</td>
+                                            <td className="border border-gray-400 p-1 text-center text-xs">{div.tipo}</td>
+                                            <td className="border border-gray-400 p-1 text-center text-xs">{div.quantidade}</td>
+                                            <td className="border border-gray-400 p-1 text-center text-xs">{div.observacao}</td>
+                                        </tr>
+                                    )
+                                })}
+                                {Array.from({ length: Math.max(0, 4 - divergencias.length) }).map((_, i) => (
+                                    <tr key={`div-empty-${i}`}><td className="border border-gray-400 h-6" colSpan={4}></td></tr>
                                 ))}
                              </tbody>
                         </table>
@@ -361,7 +378,7 @@ const RomaneioDescarga: React.FC<RomaneioDescargaProps> = ({ recebimento, onBack
                         <div className="grid grid-cols-2 border-b border-l border-r border-gray-400">
                             <div className="p-1">Houve avarias?</div>
                             <div className="border-l border-gray-400 p-1">
-                                ( ) SIM ( ) NÃO
+                                {recebimento.houveAvarias ? '(X) SIM ( ) NÃO' : '( ) SIM (X) NÃO'}
                             </div>
                         </div>
                     </div>

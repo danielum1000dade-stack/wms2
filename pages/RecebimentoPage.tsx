@@ -1,10 +1,11 @@
+
 import React, { useState, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Recebimento, Etiqueta, EtiquetaStatus } from '../types';
-import { PlusIcon, PrinterIcon, ArrowUturnLeftIcon, TrashIcon, ChevronDownIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PrinterIcon, TrashIcon, ChevronDownIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import Modal from '../components/Modal';
 import EtiquetasImprimir from '../components/EtiquetasImprimir';
-import RomaneioDescarga from '../components/RomaneioDescarga';
+import DivergenciaModal from '../components/DivergenciaModal';
 
 const RecebimentoPage: React.FC = () => {
     const { recebimentos, addRecebimento, getEtiquetasByRecebimento, deleteEtiqueta, deleteEtiquetas } = useWMS();
@@ -13,11 +14,26 @@ const RecebimentoPage: React.FC = () => {
     const [currentRecebimento, setCurrentRecebimento] = useState<Recebimento | null>(null);
     const [etiquetasParaImprimir, setEtiquetasParaImprimir] = useState<Etiqueta[]>([]);
     const [expandedRecebimentoId, setExpandedRecebimentoId] = useState<string | null>(null);
+    const [divergenciaModalOpen, setDivergenciaModalOpen] = useState(false);
+    const [recebimentoParaDivergencia, setRecebimentoParaDivergencia] = useState<Recebimento | null>(null);
 
     const handleOpenModal = () => setIsModalOpen(true);
     const handleCloseModal = () => setIsModalOpen(false);
 
-    const handleSaveRecebimento = (formData: Omit<Recebimento, 'id' | 'dataHoraChegada' | 'etiquetasGeradas'>, etiquetasCount: number) => {
+    const handleOpenDivergenciaModal = (recebimento: Recebimento) => {
+        setRecebimentoParaDivergencia(recebimento);
+        setDivergenciaModalOpen(true);
+    }
+
+    const handleCloseDivergenciaModal = () => {
+        setRecebimentoParaDivergencia(null);
+        setDivergenciaModalOpen(false);
+    }
+
+    const handleSaveRecebimento = (
+        formData: Omit<Recebimento, 'id' | 'dataHoraChegada' | 'etiquetasGeradas'>, 
+        etiquetasCount: number
+    ) => {
         const { newRecebimento, newEtiquetas } = addRecebimento({
             ...formData,
             etiquetasGeradas: etiquetasCount,
@@ -127,6 +143,11 @@ const RecebimentoPage: React.FC = () => {
                                                         <div className="flex justify-between items-center mb-2">
                                                             <h4 className="font-semibold text-gray-700">Etiquetas do Recebimento {r.notaFiscal}</h4>
                                                             <div className="flex items-center space-x-2">
+                                                                <button
+                                                                    onClick={() => handleOpenDivergenciaModal(r)}
+                                                                    className="flex items-center text-sm bg-yellow-500 text-white px-3 py-1 rounded-md hover:bg-yellow-600">
+                                                                    <ExclamationTriangleIcon className="h-4 w-4 mr-1" /> Gerenciar Divergências
+                                                                </button>
                                                                 <button 
                                                                     onClick={() => handlePrepareToPrint(etiquetasDoRecebimento, r)}
                                                                     className="flex items-center text-sm bg-blue-500 text-white px-3 py-1 rounded-md hover:bg-blue-600">
@@ -192,6 +213,12 @@ const RecebimentoPage: React.FC = () => {
             {isModalOpen && (
                 <RecebimentoFormModal onSave={handleSaveRecebimento} onClose={handleCloseModal} />
             )}
+            {divergenciaModalOpen && recebimentoParaDivergencia && (
+                <DivergenciaModal
+                    recebimento={recebimentoParaDivergencia}
+                    onClose={handleCloseDivergenciaModal}
+                />
+            )}
         </div>
     );
 };
@@ -220,21 +247,21 @@ const RecebimentoFormModal: React.FC<{
         }
     }, [industrias, formData.fornecedor]);
 
-
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         const isNumberInput = (e.target as HTMLInputElement).type === 'number';
         setFormData(prev => ({ ...prev, [name]: isNumberInput && value !== '' ? parseFloat(value) : value }));
     };
-
+    
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        onSave(formData, etiquetasGeradas);
+        onSave({ ...formData }, etiquetasGeradas);
     };
 
     return (
         <Modal title="Novo Recebimento" onClose={onClose}>
             <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Campos do Recebimento */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Placa do Veículo</label>
@@ -287,6 +314,7 @@ const RecebimentoFormModal: React.FC<{
                         <input type="number" min="1" name="etiquetasGeradas" value={etiquetasGeradas} onChange={(e) => setEtiquetasGeradas(parseInt(e.target.value, 10))} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"/>
                     </div>
                 </div>
+
                 <div className="flex justify-end space-x-2 pt-4">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
                     <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Salvar e Gerar Etiquetas</button>
