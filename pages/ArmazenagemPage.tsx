@@ -11,7 +11,7 @@ const ArmazenagemPage: React.FC = () => {
     const [palletsParaArmazenar, setPalletsParaArmazenar] = useState<Etiqueta[]>([]);
     const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
     const [suggestedEndereco, setSuggestedEndereco] = useState<Endereco | null>(null);
-    const [manualEndereco, setManualEndereco] = useState<Endereco | null>(null);
+    const [manualAddressInput, setManualAddressInput] = useState('');
     const [finalEndereco, setFinalEndereco] = useState<Endereco | null>(null);
     
     const [palletIdInput, setPalletIdInput] = useState('');
@@ -69,6 +69,7 @@ const ArmazenagemPage: React.FC = () => {
 
     const handleSelectEtiqueta = (etiqueta: Etiqueta) => {
         resetState(true); // Keep pallet selection UI
+        setFeedback(null);
         setSelectedEtiqueta(etiqueta);
         setPalletIdInput(etiqueta.id);
 
@@ -88,11 +89,10 @@ const ArmazenagemPage: React.FC = () => {
             setPalletIdInput('');
         }
         setSuggestedEndereco(null);
-        setManualEndereco(null);
+        setManualAddressInput('');
         setFinalEndereco(null);
         setIsAddressScanning(false);
         setIsPalletScanning(false);
-        setFeedback(null);
     }
 
     const handleFindPallet = (id: string) => {
@@ -145,7 +145,7 @@ const ArmazenagemPage: React.FC = () => {
         if (decodedText === finalEndereco.codigo) {
             armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
             setFeedback({ type: 'success', message: `Pallet ${selectedEtiqueta.id} armazenado em ${finalEndereco.nome} com sucesso!`});
-            setTimeout(resetState, 2000);
+            setTimeout(() => { resetState(); setFeedback(null); }, 2000);
         } else {
             setFeedback({ type: 'error', message: `Endereço incorreto! Escaneado: ${decodedText}. Esperado: ${finalEndereco.codigo}.`});
         }
@@ -154,11 +154,25 @@ const ArmazenagemPage: React.FC = () => {
 
     const handleManualConfirm = () => {
         if (!finalEndereco || !selectedEtiqueta) return;
-
+    
         if (window.confirm(`Tem certeza que deseja confirmar a armazenagem em ${finalEndereco.nome} manualmente, sem escanear o endereço?\n\nUse esta opção apenas se a leitura do código não for possível.`)) {
-            armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
-            setFeedback({ type: 'success', message: `Pallet ${selectedEtiqueta.id} armazenado em ${finalEndereco.nome} com sucesso!`});
-            setTimeout(resetState, 2000);
+            // Capture values before state changes
+            const etiquetaId = selectedEtiqueta.id;
+            const enderecoId = finalEndereco.id;
+            const enderecoNome = finalEndereco.nome;
+            
+            // 1. Perform the storage action. This will trigger a re-render that removes the pallet from the list.
+            armazenarEtiqueta(etiquetaId, enderecoId);
+            
+            // 2. Set the success message. This will be displayed in the next render.
+            setFeedback({ type: 'success', message: `Pallet ${etiquetaId} armazenado em ${enderecoNome} com sucesso!`});
+            
+            // 3. After a delay, fully reset the UI to its initial state and clear the message.
+            // This gives the user time to see the feedback before the UI resets.
+            setTimeout(() => {
+                resetState();
+                setFeedback(null);
+            }, 2000);
         }
     };
 
@@ -237,31 +251,34 @@ const ArmazenagemPage: React.FC = () => {
                 <div>
                     <h4 className="font-semibold text-gray-700">Endereçamento Manual</h4>
                     <p className="text-sm text-gray-500 mb-2">Digite ou escaneie um endereço de destino.</p>
-                    <input 
-                        type="text"
-                        placeholder="Ex: A01-01-A"
-                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3"
-                        onBlur={(e) => {
-                            const found = enderecos.find(end => end.codigo.toLowerCase() === e.target.value.toLowerCase());
-                            if (found) {
-                                if (found.status !== EnderecoStatus.LIVRE) {
-                                    setFeedback({type: 'error', message: `Endereço "${found.codigo}" está ${found.status}!`});
-                                    setManualEndereco(null);
-                                } else {
-                                    setManualEndereco(found);
-                                    setFeedback(null);
+                     <div className="flex items-center space-x-2">
+                        <input 
+                            type="text"
+                            placeholder="Ex: A01-01-A"
+                            value={manualAddressInput}
+                            onChange={(e) => setManualAddressInput(e.target.value)}
+                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3"
+                        />
+                        <button
+                            onClick={() => {
+                                const addressToFind = manualAddressInput.toUpperCase();
+                                const found = enderecos.find(end => end.codigo.toUpperCase() === addressToFind);
+                                if (found) {
+                                    if (found.status !== EnderecoStatus.LIVRE) {
+                                        setFeedback({type: 'error', message: `Endereço "${found.codigo}" está ${found.status}!`});
+                                    } else {
+                                        setFinalEndereco(found);
+                                        setFeedback(null);
+                                    }
+                                } else if (manualAddressInput) {
+                                    setFeedback({type: 'error', message: 'Endereço não encontrado.'});
                                 }
-                            } else if (e.target.value) {
-                                setFeedback({type: 'error', message: 'Endereço não encontrado.'});
-                                setManualEndereco(null);
-                            }
-                        }}
-                    />
-                    {manualEndereco && (
-                        <button onClick={() => setFinalEndereco(manualEndereco)} className="mt-2 w-full bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600">
-                           Confirmar Endereço Manual: {manualEndereco.nome}
+                            }}
+                            className="flex-shrink-0 bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600"
+                        >
+                            Usar
                         </button>
-                    )}
+                    </div>
                 </div>
             </div>
         );
