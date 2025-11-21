@@ -1,8 +1,9 @@
 
+
 import React, { useState } from 'react';
 // FIX: Imported Outlet from react-router-dom to render nested routes.
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { ArrowLeftOnRectangleIcon, Bars3Icon, BuildingStorefrontIcon, CubeIcon, InboxStackIcon, MapIcon, PowerIcon, QrCodeIcon, ClipboardDocumentListIcon, DocumentChartBarIcon, TruckIcon, CheckBadgeIcon, Cog6ToothIcon, XMarkIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftOnRectangleIcon, Bars3Icon, BuildingStorefrontIcon, CubeIcon, InboxStackIcon, MapIcon, PowerIcon, QrCodeIcon, ClipboardDocumentListIcon, DocumentChartBarIcon, TruckIcon, CheckBadgeIcon, Cog6ToothIcon, XMarkIcon, ChevronDownIcon, CubeTransparentIcon } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
     onLogout: () => void;
@@ -17,6 +18,7 @@ const Layout: React.FC<LayoutProps> = ({ onLogout, children }) => {
         { path: '/recebimento', icon: InboxStackIcon, label: 'Recebimento' },
         { path: '/apontamento', icon: QrCodeIcon, label: 'Apontamento' },
         { path: '/armazenagem', icon: MapIcon, label: 'Armazenagem' },
+        { path: '/estoque', icon: CubeTransparentIcon, label: 'Estoque' },
         { path: '/pedidos', icon: ClipboardDocumentListIcon, label: 'Pedidos' },
         { path: '/picking', icon: CubeIcon, label: 'Picking' },
         { path: '/conferencia', icon: CheckBadgeIcon, label: 'Conferência' },

@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -14,6 +15,7 @@ import CadastroPage from './pages/CadastroPage';
 import RelatoriosPage from './pages/RelatoriosPage';
 import LoginPage from './pages/LoginPage';
 import ApontamentoPage from './pages/ApontamentoPage';
+import EstoquePage from './pages/EstoquePage';
 import { WMSProvider } from './context/WMSContext';
 
 const App: React.FC = () => {
@@ -40,6 +42,7 @@ const App: React.FC = () => {
                             <Route path="/recebimento" element={<RecebimentoPage />} />
                             <Route path="/apontamento" element={<ApontamentoPage />} />
                             <Route path="/armazenagem" element={<ArmazenagemPage />} />
+                            <Route path="/estoque" element={<EstoquePage />} />
                             <Route path="/pedidos" element={<PedidosPage />} />
                             <Route path="/picking" element={<PickingPage />} />
                             <Route path="/conferencia" element={<ConferenciaPage />} />

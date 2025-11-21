@@ -160,6 +160,38 @@ export interface Divergencia {
     observacao?: string;
 }
 
+// Inventory Count Types
+export interface InventoryCountSession {
+    id: string;
+    createdAt: string;
+    status: 'Em Andamento' | 'Concluído' | 'Cancelado';
+    filters: {
+        area: EnderecoTipo;
+        corredor?: string;
+        predio?: string;
+        nivel?: string;
+    };
+    countedBy?: string; // User ID
+    totalLocations: number;
+    locationsCounted: number;
+}
+
+export interface InventoryCountItem {
+    id: string;
+    sessionId: string;
+    enderecoId: string;
+    expectedEtiquetaId: string | null;
+    foundEtiquetaId: string | null;
+    expectedSkuId: string | null;
+    expectedQuantity: number | null;
+    countedQuantity: number | null;
+    discrepancy: number; // calculated: counted - expected
+    countedAt: string;
+    status: 'Pendente' | 'Contado' | 'Vazio' | 'Pulado';
+    justification?: string;
+}
+
+
 // User Management Types
 export enum Permission {
     VIEW_DASHBOARD = 'VIEW_DASHBOARD',
@@ -170,6 +202,7 @@ export enum Permission {
     MANAGE_PICKING = 'MANAGE_PICKING',
     MANAGE_CONFERENCIA = 'MANAGE_CONFERENCIA',
     MANAGE_EXPEDICAO = 'MANAGE_EXPEDICAO',
+    MANAGE_INVENTORY = 'MANAGE_INVENTORY',
     VIEW_MISSOES = 'VIEW_MISSOES',
     VIEW_RELATORIOS = 'VIEW_RELATORIOS',
     MANAGE_CADASTRO_SKU = 'MANAGE_CADASTRO_SKU',
@@ -188,6 +221,7 @@ export const permissionLabels: Record<Permission, string> = {
     [Permission.MANAGE_PICKING]: 'Realizar Picking',
     [Permission.MANAGE_CONFERENCIA]: 'Realizar Conferência',
     [Permission.MANAGE_EXPEDICAO]: 'Realizar Expedição',
+    [Permission.MANAGE_INVENTORY]: 'Gerenciar Inventário',
     [Permission.VIEW_MISSOES]: 'Ver Missões',
     [Permission.VIEW_RELATORIOS]: 'Ver Relatórios',
     [Permission.MANAGE_CADASTRO_SKU]: 'Gerenciar SKUs',

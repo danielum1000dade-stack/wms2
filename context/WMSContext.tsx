@@ -3,7 +3,8 @@ import useLocalStorage from '../hooks/useLocalStorage';
 import { 
     SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
     EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
-    EnderecoStatus, User, UserStatus, Profile, Permission
+    EnderecoStatus, User, UserStatus, Profile, Permission,
+    InventoryCountSession, InventoryCountItem
 } from '../types';
 
 const ADMIN_PROFILE_ID = 'admin_profile';
@@ -26,6 +27,7 @@ const defaultProfiles: Profile[] = [
             [Permission.MANAGE_APONTAMENTO]: true,
             [Permission.MANAGE_ARMAZENAGEM]: true,
             [Permission.MANAGE_PICKING]: true,
+            [Permission.MANAGE_INVENTORY]: true,
             [Permission.VIEW_MISSOES]: true,
         }
     },
@@ -94,6 +96,13 @@ interface WMSContextType {
     addProfile: (profile: Omit<Profile, 'id'>) => { success: boolean, message?: string };
     updateProfile: (profile: Profile) => { success: boolean, message?: string };
     deleteProfile: (id: string) => { success: boolean, message?: string };
+    inventoryCountSessions: InventoryCountSession[];
+    inventoryCountItems: InventoryCountItem[];
+    startInventoryCount: (filters: InventoryCountSession['filters'], locations: Endereco[]) => InventoryCountSession;
+    recordCountItem: (itemData: Omit<InventoryCountItem, 'id'>) => void;
+    undoLastCount: (sessionId: string) => void;
+    finishInventoryCount: (sessionId: string) => void;
+    getCountItemsBySession: (sessionId: string) => InventoryCountItem[];
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -112,6 +121,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [users, setUsers] = useLocalStorage<User[]>('wms_users', [
         { id: 'admin_user', username: 'admin', fullName: 'Administrador', profileId: ADMIN_PROFILE_ID, status: UserStatus.ATIVO }
     ]);
+    const [inventoryCountSessions, setInventoryCountSessions] = useLocalStorage<InventoryCountSession[]>('wms_inventory_sessions', []);
+    const [inventoryCountItems, setInventoryCountItems] = useLocalStorage<InventoryCountItem[]>('wms_inventory_items', []);
+
 
     const generateId = () => new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -418,6 +430,65 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setProfiles(prev => prev.filter(p => p.id !== id));
         return { success: true };
     };
+    
+    // Inventory Count Management
+    const startInventoryCount = (filters: InventoryCountSession['filters'], locations: Endereco[]): InventoryCountSession => {
+        const newSession: InventoryCountSession = {
+            id: `INV-${generateId()}`,
+            createdAt: new Date().toISOString(),
+            status: 'Em Andamento',
+            filters,
+            totalLocations: locations.length,
+            locationsCounted: 0,
+        };
+        setInventoryCountSessions(prev => [...prev, newSession]);
+        return newSession;
+    };
+
+    const recordCountItem = (itemData: Omit<InventoryCountItem, 'id'>) => {
+        const newItem: InventoryCountItem = {
+            ...itemData,
+            id: generateId(),
+        };
+        setInventoryCountItems(prev => [...prev, newItem]);
+        
+        // Update session progress
+        setInventoryCountSessions(prev => prev.map(session => {
+            if (session.id === itemData.sessionId) {
+                return { ...session, locationsCounted: session.locationsCounted + 1 };
+            }
+            return session;
+        }));
+    };
+    
+    const undoLastCount = (sessionId: string) => {
+        const sessionItems = inventoryCountItems
+            .filter(item => item.sessionId === sessionId)
+            .sort((a, b) => new Date(b.countedAt).getTime() - new Date(a.countedAt).getTime());
+
+        if (sessionItems.length === 0) return;
+
+        const lastItemId = sessionItems[0].id;
+        
+        setInventoryCountItems(prev => prev.filter(item => item.id !== lastItemId));
+
+        setInventoryCountSessions(prev => prev.map(session => {
+            if (session.id === sessionId) {
+                return { ...session, locationsCounted: Math.max(0, session.locationsCounted - 1) };
+            }
+            return session;
+        }));
+    };
+
+    const finishInventoryCount = (sessionId: string) => {
+        setInventoryCountSessions(prev => prev.map(session => 
+            session.id === sessionId ? { ...session, status: 'Concluído' } : session
+        ));
+    };
+
+    const getCountItemsBySession = (sessionId: string) => {
+        return inventoryCountItems.filter(item => item.sessionId === sessionId);
+    };
 
 
     const value = {
@@ -431,7 +502,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,
-        profiles, addProfile, updateProfile, deleteProfile
+        profiles, addProfile, updateProfile, deleteProfile,
+        inventoryCountSessions, inventoryCountItems, startInventoryCount, recordCountItem, undoLastCount, finishInventoryCount, getCountItemsBySession
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

@@ -18,6 +18,7 @@ const permissionGroups = {
         Permission.MANAGE_PICKING,
         Permission.MANAGE_CONFERENCIA,
         Permission.MANAGE_EXPEDICAO,
+        Permission.MANAGE_INVENTORY,
         Permission.VIEW_MISSOES,
         Permission.VIEW_RELATORIOS,
     ],
