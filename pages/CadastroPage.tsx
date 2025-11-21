@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
 import UserModal from '../components/UserModal';
@@ -28,9 +28,9 @@ const CadastroPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">Cadastros Gerais</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
                 <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
-                    <TabButton tabName="enderecos" label="Endereços" icon={TrashIcon} />
-                    <TabButton tabName="skus" label="SKUs" icon={TrashIcon} />
-                    <TabButton tabName="industrias" label="Indústrias" icon={TrashIcon} />
+                    <TabButton tabName="enderecos" label="Endereços" icon={MapIcon} />
+                    <TabButton tabName="skus" label="SKUs" icon={ArchiveBoxIcon} />
+                    <TabButton tabName="industrias" label="Indústrias" icon={BuildingOffice2Icon} />
                     <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
                     <TabButton tabName="perfis" label="Perfis de Acesso" icon={ShieldCheckIcon} />
                 </div>
