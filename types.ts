@@ -161,11 +161,46 @@ export interface Divergencia {
 }
 
 // User Management Types
-export enum UserRole {
-    ADMIN = 'Admin',
-    OPERADOR = 'Operador',
-    CONFERENTE = 'Conferente',
-    EXPEDICAO = 'Expedição'
+export enum Permission {
+    VIEW_DASHBOARD = 'VIEW_DASHBOARD',
+    MANAGE_RECEBIMENTO = 'MANAGE_RECEBIMENTO',
+    MANAGE_APONTAMENTO = 'MANAGE_APONTAMENTO',
+    MANAGE_ARMAZENAGEM = 'MANAGE_ARMAZENAGEM',
+    MANAGE_PEDIDOS = 'MANAGE_PEDIDOS',
+    MANAGE_PICKING = 'MANAGE_PICKING',
+    MANAGE_CONFERENCIA = 'MANAGE_CONFERENCIA',
+    MANAGE_EXPEDICAO = 'MANAGE_EXPEDICAO',
+    VIEW_MISSOES = 'VIEW_MISSOES',
+    VIEW_RELATORIOS = 'VIEW_RELATORIOS',
+    MANAGE_CADASTRO_SKU = 'MANAGE_CADASTRO_SKU',
+    MANAGE_CADASTRO_ENDERECO = 'MANAGE_CADASTRO_ENDERECO',
+    MANAGE_CADASTRO_INDUSTRIA = 'MANAGE_CADASTRO_INDUSTRIA',
+    MANAGE_CADASTRO_USUARIOS = 'MANAGE_CADASTRO_USUARIOS',
+    MANAGE_CADASTRO_PERFIS = 'MANAGE_CADASTRO_PERFIS'
+}
+
+export const permissionLabels: Record<Permission, string> = {
+    [Permission.VIEW_DASHBOARD]: 'Ver Dashboard',
+    [Permission.MANAGE_RECEBIMENTO]: 'Gerenciar Recebimento',
+    [Permission.MANAGE_APONTAMENTO]: 'Realizar Apontamento',
+    [Permission.MANAGE_ARMAZENAGEM]: 'Realizar Armazenagem',
+    [Permission.MANAGE_PEDIDOS]: 'Gerenciar Pedidos',
+    [Permission.MANAGE_PICKING]: 'Realizar Picking',
+    [Permission.MANAGE_CONFERENCIA]: 'Realizar Conferência',
+    [Permission.MANAGE_EXPEDICAO]: 'Realizar Expedição',
+    [Permission.VIEW_MISSOES]: 'Ver Missões',
+    [Permission.VIEW_RELATORIOS]: 'Ver Relatórios',
+    [Permission.MANAGE_CADASTRO_SKU]: 'Gerenciar SKUs',
+    [Permission.MANAGE_CADASTRO_ENDERECO]: 'Gerenciar Endereços',
+    [Permission.MANAGE_CADASTRO_INDUSTRIA]: 'Gerenciar Indústrias',
+    [Permission.MANAGE_CADASTRO_USUARIOS]: 'Gerenciar Usuários',
+    [Permission.MANAGE_CADASTRO_PERFIS]: 'Gerenciar Perfis de Acesso',
+};
+
+export interface Profile {
+    id: string;
+    name: string;
+    permissions: Partial<Record<Permission, boolean>>;
 }
 
 export enum UserStatus {
@@ -177,6 +212,6 @@ export interface User {
     id: string;
     username: string;
     fullName: string;
-    role: UserRole;
+    profileId: string;
     status: UserStatus;
 }

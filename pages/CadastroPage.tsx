@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserRole, UserStatus } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels } from '../types';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
 import UserModal from '../components/UserModal';
+import ProfileModal from '../components/ProfileModal';
+
 
 declare const XLSX: any;
 
@@ -30,12 +32,14 @@ const CadastroPage: React.FC = () => {
                     <TabButton tabName="skus" label="SKUs" icon={TrashIcon} />
                     <TabButton tabName="industrias" label="Indústrias" icon={TrashIcon} />
                     <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
+                    <TabButton tabName="perfis" label="Perfis de Acesso" icon={ShieldCheckIcon} />
                 </div>
                 <div>
                     {activeTab === 'enderecos' && <CadastroEnderecos />}
                     {activeTab === 'skus' && <CadastroSKUs />}
                     {activeTab === 'industrias' && <CadastroIndustrias />}
                     {activeTab === 'usuarios' && <CadastroUsuarios />}
+                    {activeTab === 'perfis' && <CadastroPerfis />}
                 </div>
             </div>
         </div>
@@ -531,7 +535,7 @@ const IndustriaModal: React.FC<{ industria: Partial<Industria> | null, onSave: (
 
 // CadastroUsuarios Component
 const CadastroUsuarios: React.FC = () => {
-    const { users, addUser, updateUser, deleteUser } = useWMS();
+    const { users, addUser, updateUser, deleteUser, profiles } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [currentUser, setCurrentUser] = useState<Partial<User> | null>(null);
     const [error, setError] = useState('');
@@ -591,28 +595,117 @@ const CadastroUsuarios: React.FC = () => {
                         </tr>
                     </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
-                        {users.map(u => (
-                            <tr key={u.id}>
-                                <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{u.username}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{u.role}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.status === UserStatus.ATIVO ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                        {u.status}
-                                    </span>
+                        {users.map(u => {
+                            const profile = profiles.find(p => p.id === u.profileId);
+                            return (
+                                <tr key={u.id}>
+                                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{u.username}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{profile?.name || 'Não definido'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.status === UserStatus.ATIVO ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                            {u.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onClick={() => openModal(u)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => handleDelete(u)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
+                    </tbody>
+                </table>
+            </div>
+             {isModalOpen && <UserModal user={currentUser} profiles={profiles} onSave={handleSave} onClose={closeModal} serverError={error} />}
+        </div>
+    )
+}
+
+// CadastroPerfis Component
+const CadastroPerfis: React.FC = () => {
+    const { profiles, addProfile, updateProfile, deleteProfile } = useWMS();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentProfile, setCurrentProfile] = useState<Partial<Profile> | null>(null);
+    const [error, setError] = useState('');
+
+    const openModal = (profile: Partial<Profile> | null = null) => {
+        setCurrentProfile(profile || { permissions: {} });
+        setIsModalOpen(true);
+        setError('');
+    };
+
+    const closeModal = () => {
+        setCurrentProfile(null);
+        setIsModalOpen(false);
+    };
+    
+    const handleSave = (formData: Omit<Profile, 'id'>) => {
+        let result: { success: boolean, message?: string };
+        if (currentProfile && 'id' in currentProfile) {
+            result = updateProfile({ ...currentProfile, ...formData } as Profile);
+        } else {
+            result = addProfile(formData);
+        }
+
+        if (result.success) {
+            closeModal();
+        } else {
+            setError(result.message || 'Ocorreu um erro desconhecido.');
+        }
+    };
+    
+    const handleDelete = (profile: Profile) => {
+        if (window.confirm(`Tem certeza que deseja excluir o perfil "${profile.name}"?`)) {
+            const result = deleteProfile(profile.id);
+            if (!result.success) {
+                alert(result.message);
+            }
+        }
+    };
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Gerenciar Perfis de Acesso</h2>
+                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                    <PlusIcon className="h-5 w-5 mr-2" /> Novo Perfil
+                </button>
+            </div>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome do Perfil</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Permissões</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {profiles.map(p => (
+                            <tr key={p.id}>
+                                <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{p.name}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {Object.entries(p.permissions)
+                                        .filter(([, value]) => value)
+                                        .slice(0, 3)
+                                        .map(([key]) => permissionLabels[key as Permission])
+                                        .join(', ')}
+                                    {Object.values(p.permissions).filter(v => v).length > 3 && ', ...'}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button onClick={() => openModal(u)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
-                                    <button onClick={() => handleDelete(u)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                    <button onClick={() => openModal(p)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                    <button onClick={() => handleDelete(p)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
                                 </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
-             {isModalOpen && <UserModal user={currentUser} onSave={handleSave} onClose={closeModal} serverError={error} />}
+            {isModalOpen && <ProfileModal profile={currentProfile} onSave={handleSave} onClose={closeModal} serverError={error} />}
         </div>
-    )
-}
+    );
+};
+
 
 export default CadastroPage;

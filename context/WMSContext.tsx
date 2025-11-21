@@ -1,7 +1,52 @@
-
 import React, { createContext, useContext } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo, EnderecoStatus, User, UserRole, UserStatus } from '../types';
+import { 
+    SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
+    EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
+    EnderecoStatus, User, UserStatus, Profile, Permission
+} from '../types';
+
+const ADMIN_PROFILE_ID = 'admin_profile';
+const OPERADOR_PROFILE_ID = 'operador_profile';
+const CONFERENTE_PROFILE_ID = 'conferente_profile';
+const EXPEDICAO_PROFILE_ID = 'expedicao_profile';
+
+const defaultProfiles: Profile[] = [
+    {
+        id: ADMIN_PROFILE_ID,
+        name: 'Admin',
+        permissions: Object.values(Permission).reduce((acc, p) => ({ ...acc, [p]: true }), {})
+    },
+    {
+        id: OPERADOR_PROFILE_ID,
+        name: 'Operador',
+        permissions: {
+            [Permission.VIEW_DASHBOARD]: true,
+            [Permission.MANAGE_RECEBIMENTO]: true,
+            [Permission.MANAGE_APONTAMENTO]: true,
+            [Permission.MANAGE_ARMAZENAGEM]: true,
+            [Permission.MANAGE_PICKING]: true,
+            [Permission.VIEW_MISSOES]: true,
+        }
+    },
+    {
+        id: CONFERENTE_PROFILE_ID,
+        name: 'Conferente',
+        permissions: {
+            [Permission.VIEW_DASHBOARD]: true,
+            [Permission.MANAGE_CONFERENCIA]: true,
+        }
+    },
+    {
+        id: EXPEDICAO_PROFILE_ID,
+        name: 'Expedição',
+        permissions: {
+            [Permission.VIEW_DASHBOARD]: true,
+            [Permission.MANAGE_EXPEDICAO]: true,
+        }
+    }
+];
+
 
 interface WMSContextType {
     skus: SKU[];
@@ -45,6 +90,10 @@ interface WMSContextType {
     addUser: (user: Omit<User, 'id'>) => { success: boolean, message?: string };
     updateUser: (user: User) => { success: boolean, message?: string };
     deleteUser: (id: string) => { success: boolean, message?: string };
+    profiles: Profile[];
+    addProfile: (profile: Omit<Profile, 'id'>) => { success: boolean, message?: string };
+    updateProfile: (profile: Profile) => { success: boolean, message?: string };
+    deleteProfile: (id: string) => { success: boolean, message?: string };
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -59,8 +108,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [palletsConsolidados, setPalletsConsolidados] = useLocalStorage<PalletConsolidado[]>('wms_pallets_consolidados', []);
     const [industrias, setIndustrias] = useLocalStorage<Industria[]>('wms_industrias', []);
     const [divergencias, setDivergencias] = useLocalStorage<Divergencia[]>('wms_divergencias', []);
+    const [profiles, setProfiles] = useLocalStorage<Profile[]>('wms_profiles', defaultProfiles);
     const [users, setUsers] = useLocalStorage<User[]>('wms_users', [
-        { id: 'admin_user', username: 'admin', fullName: 'Administrador', role: UserRole.ADMIN, status: UserStatus.ATIVO }
+        { id: 'admin_user', username: 'admin', fullName: 'Administrador', profileId: ADMIN_PROFILE_ID, status: UserStatus.ATIVO }
     ]);
 
     const generateId = () => new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
@@ -328,12 +378,44 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             return { success: false, message: 'Usuário não encontrado.' };
         }
         
-        const activeAdmins = users.filter(u => u.role === UserRole.ADMIN && u.status === UserStatus.ATIVO);
-        if (userToDelete.role === UserRole.ADMIN && activeAdmins.length <= 1) {
+        const activeAdmins = users.filter(u => u.profileId === ADMIN_PROFILE_ID && u.status === UserStatus.ATIVO);
+        if (userToDelete.profileId === ADMIN_PROFILE_ID && activeAdmins.length <= 1) {
             return { success: false, message: 'Não é possível excluir o último administrador ativo do sistema.' };
         }
 
         setUsers(prev => prev.filter(u => u.id !== id));
+        return { success: true };
+    };
+
+    // Profile Management
+    const addProfile = (profileData: Omit<Profile, 'id'>) => {
+        const existingProfile = profiles.find(p => p.name.toLowerCase() === profileData.name.toLowerCase());
+        if (existingProfile) {
+            return { success: false, message: 'Já existe um perfil com este nome.' };
+        }
+        const newProfile = { ...profileData, id: generateId() };
+        setProfiles(prev => [...prev, newProfile]);
+        return { success: true };
+    };
+
+    const updateProfile = (updatedProfile: Profile) => {
+        const existingProfile = profiles.find(p => p.name.toLowerCase() === updatedProfile.name.toLowerCase() && p.id !== updatedProfile.id);
+        if (existingProfile) {
+            return { success: false, message: 'Já existe um perfil com este nome.' };
+        }
+        setProfiles(prev => prev.map(p => p.id === updatedProfile.id ? updatedProfile : p));
+        return { success: true };
+    };
+
+    const deleteProfile = (id: string) => {
+        if (id === ADMIN_PROFILE_ID) {
+            return { success: false, message: 'O perfil de Administrador não pode ser excluído.' };
+        }
+        const isProfileInUse = users.some(u => u.profileId === id);
+        if (isProfileInUse) {
+            return { success: false, message: 'Não é possível excluir o perfil, pois ele está sendo utilizado por um ou mais usuários.' };
+        }
+        setProfiles(prev => prev.filter(p => p.id !== id));
         return { success: true };
     };
 
@@ -348,7 +430,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         missoes, createPickingMissions,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
-        users, addUser, updateUser, deleteUser
+        users, addUser, updateUser, deleteUser,
+        profiles, addProfile, updateProfile, deleteProfile
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

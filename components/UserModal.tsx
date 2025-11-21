@@ -1,19 +1,20 @@
 import React, { useState } from 'react';
-import { User, UserRole, UserStatus } from '../types';
+import { User, UserStatus, Profile } from '../types';
 
 interface UserModalProps {
     user: Partial<User> | null;
+    profiles: Profile[];
     onSave: (data: Omit<User, 'id'>) => void;
     onClose: () => void;
     serverError?: string;
 }
 
-const UserModal: React.FC<UserModalProps> = ({ user, onSave, onClose, serverError }) => {
+const UserModal: React.FC<UserModalProps> = ({ user, profiles, onSave, onClose, serverError }) => {
     const isNewUser = !user?.id;
     const [formData, setFormData] = useState({
         username: user?.username || '',
         fullName: user?.fullName || '',
-        role: user?.role || UserRole.OPERADOR,
+        profileId: user?.profileId || (profiles[0]?.id || ''),
         status: user?.status || UserStatus.ATIVO,
         password: '',
         confirmPassword: '',
@@ -67,8 +68,8 @@ const UserModal: React.FC<UserModalProps> = ({ user, onSave, onClose, serverErro
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Perfil de Acesso</label>
-                            <select name="role" value={formData.role} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
-                                {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
+                            <select name="profileId" value={formData.profileId} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                                {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
                             </select>
                         </div>
                         <div>
