@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Etiqueta, Endereco, SKU, EtiquetaStatus, EnderecoTipo } from '../types';
+import { Etiqueta, Endereco, SKU, EtiquetaStatus, EnderecoTipo, EnderecoStatus } from '../types';
 import { CameraIcon, CheckCircleIcon, LightBulbIcon, MapPinIcon, XCircleIcon } from '@heroicons/react/24/outline';
 
 declare const Html5QrcodeScanner: any;
@@ -27,21 +27,44 @@ const ArmazenagemPage: React.FC = () => {
     }, [etiquetas]);
 
     const findSuggestedAddress = (sku: SKU): Endereco | null => {
-        const sreRules = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean);
-        
         const enderecosDisponiveis = enderecos.filter(e => 
-            !e.ocupado && 
+            e.status === EnderecoStatus.LIVRE && 
             e.tipo === EnderecoTipo.ARMAZENAGEM
         );
 
-        if (sreRules.length > 0) {
-            const enderecoIdeal = enderecosDisponiveis.find(e => 
-                sreRules.some(rule => e.codigo.startsWith(rule))
-            );
-            if (enderecoIdeal) return enderecoIdeal;
+        if (enderecosDisponiveis.length === 0) return null;
+
+        const skuSres = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean);
+        
+        // Se o SKU tem SREs, procure um endereço compatível
+        if (skuSres.length > 0) {
+            const enderecosCompativeis = enderecosDisponiveis.filter(e => {
+                const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
+                if (endSres.length === 0) return false; // Endereço sem SRE não é compatível com SKU que exige SRE
+                return skuSres.some(sre => endSres.includes(sre));
+            });
+            if (enderecosCompativeis.length > 0) {
+                // Poderia ter uma lógica mais complexa aqui (ex: o que tem menos pallets), mas por agora o primeiro está bom
+                return enderecosCompativeis[0];
+            }
         }
         
-        return enderecosDisponiveis.length > 0 ? enderecosDisponiveis[0] : null;
+        // Se SKU não tem SRE (ou não achou compatível), procure um endereço "genérico" (sem SRE)
+        const enderecosGenericos = enderecosDisponiveis.filter(e => {
+            const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
+            return endSres.length === 0;
+        });
+
+        if (enderecosGenericos.length > 0) {
+            return enderecosGenericos[0];
+        }
+
+        // Como último recurso, se o SKU não tem SRE, retorne qualquer endereço livre
+        if (skuSres.length === 0) {
+            return enderecosDisponiveis[0];
+        }
+        
+        return null; // Nenhuma sugestão encontrada
     };
 
     const handleSelectEtiqueta = (etiqueta: Etiqueta) => {
@@ -202,8 +225,13 @@ const ArmazenagemPage: React.FC = () => {
                         onBlur={(e) => {
                             const found = enderecos.find(end => end.codigo.toLowerCase() === e.target.value.toLowerCase());
                             if (found) {
-                                if (found.ocupado) setFeedback({type: 'error', message: 'Este endereço já está ocupado!'});
-                                else setManualEndereco(found);
+                                if (found.status !== EnderecoStatus.LIVRE) {
+                                    setFeedback({type: 'error', message: `Endereço "${found.codigo}" está ${found.status}!`});
+                                    setManualEndereco(null);
+                                } else {
+                                    setManualEndereco(found);
+                                    setFeedback(null);
+                                }
                             } else if (e.target.value) {
                                 setFeedback({type: 'error', message: 'Endereço não encontrado.'});
                                 setManualEndereco(null);

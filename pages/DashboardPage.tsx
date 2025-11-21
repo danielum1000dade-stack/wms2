@@ -2,7 +2,7 @@
 import React from 'react';
 import { CubeIcon, InboxStackIcon, MapIcon, TruckIcon, DocumentChartBarIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import { useWMS } from '../context/WMSContext';
-import { EtiquetaStatus } from '../types';
+import { EtiquetaStatus, EnderecoStatus } from '../types';
 
 const DashboardPage: React.FC = () => {
     const { etiquetas, enderecos, pedidos, missoes } = useWMS();
@@ -10,7 +10,7 @@ const DashboardPage: React.FC = () => {
     const stats = [
         { name: 'Pallets no Estoque', value: etiquetas.filter(e => e.status === EtiquetaStatus.ARMAZENADA).length, icon: CubeIcon, color: 'bg-blue-500' },
         { name: 'Recebimentos Pendentes', value: etiquetas.filter(e => e.status === EtiquetaStatus.PENDENTE_APONTAMENTO).length, icon: InboxStackIcon, color: 'bg-yellow-500' },
-        { name: 'Posições Ocupadas', value: `${enderecos.filter(e => e.ocupado).length} / ${enderecos.length}`, icon: MapIcon, color: 'bg-green-500' },
+        { name: 'Posições Ocupadas', value: `${enderecos.filter(e => e.status === EnderecoStatus.OCUPADO).length} / ${enderecos.length}`, icon: MapIcon, color: 'bg-green-500' },
         { name: 'Pedidos em Aberto', value: pedidos.filter(p => p.status !== 'Expedido').length, icon: TruckIcon, color: 'bg-indigo-500' },
         { name: 'Missões Ativas', value: missoes.filter(m => m.status !== 'Concluída').length, icon: DocumentChartBarIcon, color: 'bg-purple-500' },
         { name: 'Alertas', value: 0, icon: ExclamationTriangleIcon, color: 'bg-red-500' },

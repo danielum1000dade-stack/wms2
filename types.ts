@@ -29,6 +29,12 @@ export enum EnderecoTipo {
   ANTECAMARA = 'Antecâmara'
 }
 
+export enum EnderecoStatus {
+  LIVRE = 'Livre',
+  OCUPADO = 'Ocupado',
+  BLOQUEADO = 'Bloqueado',
+}
+
 export interface Endereco {
   id: string;
   codigo: string;
@@ -36,7 +42,13 @@ export interface Endereco {
   altura: number; // metros
   capacidade: number; // pallets
   tipo: EnderecoTipo;
-  ocupado: boolean;
+  status: EnderecoStatus;
+  sre1?: string;
+  sre2?: string;
+  sre3?: string;
+  sre4?: string;
+  sre5?: string;
+  motivoBloqueio?: string;
 }
 
 export interface Recebimento {

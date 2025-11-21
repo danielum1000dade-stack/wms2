@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria } from '../types';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
@@ -56,7 +56,7 @@ const CadastroEnderecos: React.FC = () => {
         setIsModalOpen(false);
     };
 
-    const handleSave = (formData: Omit<Endereco, 'id' | 'ocupado'>) => {
+    const handleSave = (formData: Omit<Endereco, 'id'>) => {
         if (currentEndereco && 'id' in currentEndereco) {
             updateEndereco({ ...currentEndereco, ...formData } as Endereco);
         } else {
@@ -71,8 +71,8 @@ const CadastroEnderecos: React.FC = () => {
     };
 
     const handleDownloadTemplate = () => {
-        const headers = ['codigo', 'nome', 'altura', 'capacidade', 'tipo'];
-        const exampleData = [['A-01-01', 'Rua A Módulo 01 Nível 01', 2.5, 1, 'Armazenagem']];
+        const headers = ['codigo', 'nome', 'altura', 'capacidade', 'tipo', 'status', 'motivoBloqueio', 'sre1', 'sre2', 'sre3', 'sre4', 'sre5'];
+        const exampleData = [['A-01-01', 'Rua A Módulo 01 Nível 01', 2.5, 1, 'Armazenagem', 'Livre', '', 'FRIO', 'PESADO', '', '', '']];
         
         const dataToExport = [headers, ...exampleData];
         const ws = XLSX.utils.aoa_to_sheet(dataToExport);
@@ -87,6 +87,13 @@ const CadastroEnderecos: React.FC = () => {
         altura: { type: 'number', required: true },
         capacidade: { type: 'number', required: true },
         tipo: { type: 'string', required: true, enum: Object.values(EnderecoTipo) },
+        status: { type: 'string', required: false, enum: Object.values(EnderecoStatus) },
+        motivoBloqueio: { type: 'string', required: false },
+        sre1: { type: 'string', required: false },
+        sre2: { type: 'string', required: false },
+        sre3: { type: 'string', required: false },
+        sre4: { type: 'string', required: false },
+        sre5: { type: 'string', required: false },
     };
     
     return (
@@ -126,8 +133,13 @@ const CadastroEnderecos: React.FC = () => {
                                 <td className="px-6 py-4 whitespace-nowrap">{e.tipo}</td>
                                 <td className="px-6 py-4 whitespace-nowrap">{e.capacidade} pallets</td>
                                 <td className="px-6 py-4 whitespace-nowrap">
-                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${e.ocupado ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                                        {e.ocupado ? 'Ocupado' : 'Livre'}
+                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        e.status === EnderecoStatus.LIVRE ? 'bg-green-100 text-green-800' :
+                                        e.status === EnderecoStatus.OCUPADO ? 'bg-yellow-100 text-yellow-800' :
+                                        e.status === EnderecoStatus.BLOQUEADO ? 'bg-red-100 text-red-800' :
+                                        'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {e.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -152,11 +164,25 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
         altura: endereco?.altura || 0,
         capacidade: endereco?.capacidade || 1,
         tipo: endereco?.tipo || EnderecoTipo.ARMAZENAGEM,
+        status: endereco?.status || EnderecoStatus.LIVRE,
+        motivoBloqueio: endereco?.motivoBloqueio || '',
+        sre1: endereco?.sre1 || '',
+        sre2: endereco?.sre2 || '',
+        sre3: endereco?.sre3 || '',
+        sre4: endereco?.sre4 || '',
+        sre5: endereco?.sre5 || '',
     });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value, type } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) : value }));
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+        const { name, value } = e.target;
+        
+        setFormData(prev => {
+            const updated = { ...prev, [name]: (e.target as HTMLInputElement).type === 'number' ? parseFloat(value) : value };
+            if (name === 'status' && value !== EnderecoStatus.BLOQUEADO) {
+                updated.motivoBloqueio = '';
+            }
+            return updated;
+        });
     }
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -166,7 +192,7 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">{endereco?.id ? 'Editar' : 'Novo'} Endereço</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     {/* Form fields */}
@@ -194,6 +220,43 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
                             <input type="number" name="capacidade" id="capacidade" min="1" value={formData.capacidade} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"/>
                         </div>
                     </div>
+
+                    <div>
+                        <label htmlFor="status" className="block text-sm font-medium text-gray-700">Status</label>
+                        <select name="status" id="status" value={formData.status} onChange={handleChange} 
+                            disabled={endereco?.status === EnderecoStatus.OCUPADO}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 disabled:bg-gray-200"
+                        >
+                            <option value={EnderecoStatus.LIVRE}>Livre</option>
+                            <option value={EnderecoStatus.BLOQUEADO}>Bloqueado</option>
+                            {endereco?.status === EnderecoStatus.OCUPADO && <option value={EnderecoStatus.OCUPADO}>Ocupado</option>}
+                        </select>
+                        {endereco?.status === EnderecoStatus.OCUPADO && <p className="text-xs text-gray-500 mt-1">Não é possível alterar o status de um endereço ocupado.</p>}
+                    </div>
+                    
+                    {formData.status === EnderecoStatus.BLOQUEADO && (
+                        <div>
+                            <label htmlFor="motivoBloqueio" className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
+                            <textarea name="motivoBloqueio" id="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} rows={2}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"
+                            ></textarea>
+                        </div>
+                    )}
+
+                    <div className="pt-4 border-t">
+                        <h4 className="text-md font-medium text-gray-800">Regras de Armazenagem (SREs)</h4>
+                        <p className="text-xs text-gray-500 mb-2">Define quais tipos de produto podem ser armazenados aqui.</p>
+                         <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-2">
+                             {(['sre1', 'sre2', 'sre3', 'sre4', 'sre5'] as const).map(sre => (
+                                <div key={sre}>
+                                    <label className="block text-sm font-medium text-gray-700">{sre.toUpperCase()}</label>
+                                    <input type="text" name={sre} value={formData[sre]} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                                </div>
+                             ))}
+                         </div>
+                    </div>
+
+
                     <div className="flex justify-end space-x-2 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
                         <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Salvar</button>

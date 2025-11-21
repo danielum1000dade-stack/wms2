@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo } from '../types';
+import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo, EnderecoStatus } from '../types';
 
 interface WMSContextType {
     skus: SKU[];
@@ -10,11 +10,10 @@ interface WMSContextType {
     updateSku: (sku: SKU) => void;
     deleteSku: (id: string) => boolean;
     enderecos: Endereco[];
-    addEndereco: (endereco: Omit<Endereco, 'id' | 'ocupado'>) => void;
-    addEnderecosBatch: (enderecos: Omit<Endereco, 'id' | 'ocupado'>[]) => void;
+    addEndereco: (endereco: Omit<Endereco, 'id'>) => void;
+    addEnderecosBatch: (enderecos: Omit<Endereco, 'id'>[]) => void;
     updateEndereco: (endereco: Endereco) => void;
     deleteEndereco: (id: string) => void;
-    updateEnderecoOcupacao: (id: string, ocupado: boolean) => void;
     industrias: Industria[];
     addIndustria: (industria: Omit<Industria, 'id'>) => Industria;
     addIndustriasBatch: (industrias: Omit<Industria, 'id'>[]) => void;
@@ -81,15 +80,19 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // Endereco Management
-    const addEndereco = (endereco: Omit<Endereco, 'id' | 'ocupado'>) => setEnderecos([...enderecos, { ...endereco, id: generateId(), ocupado: false }]);
-    const addEnderecosBatch = (newEnderecos: Omit<Endereco, 'id' | 'ocupado'>[]) => {
-        const enderecosWithIds = newEnderecos.map(end => ({ ...end, id: generateId(), ocupado: false }));
+    const addEndereco = (endereco: Omit<Endereco, 'id'>) => setEnderecos([...enderecos, { ...endereco, id: generateId(), status: endereco.status || EnderecoStatus.LIVRE }]);
+    const addEnderecosBatch = (newEnderecos: Omit<Endereco, 'id'>[]) => {
+        const enderecosWithIds = newEnderecos.map(end => ({ ...end, id: generateId(), status: end.status || EnderecoStatus.LIVRE }));
         setEnderecos(prev => [...prev, ...enderecosWithIds]);
     };
     const updateEndereco = (updatedEndereco: Endereco) => setEnderecos(enderecos.map(e => e.id === updatedEndereco.id ? updatedEndereco : e));
-    const deleteEndereco = (id: string) => setEnderecos(enderecos.filter(e => e.id !== id));
-    const updateEnderecoOcupacao = (id: string, ocupado: boolean) => {
-        setEnderecos(enderecos.map(e => e.id === id ? { ...e, ocupado } : e))
+    const deleteEndereco = (id: string) => {
+        const enderecoToDelete = enderecos.find(e => e.id === id);
+        if (enderecoToDelete && enderecoToDelete.status === EnderecoStatus.OCUPADO) {
+            alert("Não é possível excluir um endereço que está ocupado.");
+            return;
+        }
+        setEnderecos(enderecos.filter(e => e.id !== id));
     };
 
     // Industria Management
@@ -197,19 +200,36 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const armazenarEtiqueta = (id: string, enderecoId: string) => {
         const etiqueta = getEtiquetaById(id);
-        if (etiqueta) {
-            // Free up old address if exists
-            if(etiqueta.enderecoId) updateEnderecoOcupacao(etiqueta.enderecoId, false);
-            // Update etiqueta
-            updateEtiqueta({
-                ...etiqueta,
-                enderecoId,
-                status: EtiquetaStatus.ARMAZENADA,
-                dataArmazenagem: new Date().toISOString()
-            });
-            // Occupy new address
-            updateEnderecoOcupacao(enderecoId, true);
+        const enderecoDestino = enderecos.find(e => e.id === enderecoId);
+
+        if (!etiqueta || !enderecoDestino || enderecoDestino.status !== EnderecoStatus.LIVRE) {
+            console.error("Armazenagem inválida: Etiqueta ou endereço não encontrado, ou endereço não está livre.", { etiqueta, enderecoDestino });
+            return;
         }
+
+        setEnderecos(prevEnderecos => {
+            let newEnderecos = [...prevEnderecos];
+            // Free up old address if it exists
+            if (etiqueta.enderecoId) {
+                const oldEnderecoIndex = newEnderecos.findIndex(e => e.id === etiqueta.enderecoId);
+                if (oldEnderecoIndex > -1) {
+                    newEnderecos[oldEnderecoIndex] = { ...newEnderecos[oldEnderecoIndex], status: EnderecoStatus.LIVRE };
+                }
+            }
+            // Occupy new address
+            const newEnderecoIndex = newEnderecos.findIndex(e => e.id === enderecoId);
+            if (newEnderecoIndex > -1) {
+                newEnderecos[newEnderecoIndex] = { ...newEnderecos[newEnderecoIndex], status: EnderecoStatus.OCUPADO };
+            }
+            return newEnderecos;
+        });
+        
+        updateEtiqueta({
+            ...etiqueta,
+            enderecoId,
+            status: EtiquetaStatus.ARMAZENADA,
+            dataArmazenagem: new Date().toISOString()
+        });
     };
     
     // Pedido Management
@@ -277,7 +297,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const value = {
         skus, addSku, addSkusBatch, updateSku, deleteSku,
-        enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco, updateEnderecoOcupacao,
+        enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco,
         industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
         recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
