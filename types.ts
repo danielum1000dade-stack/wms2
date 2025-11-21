@@ -14,6 +14,7 @@ export interface SKU {
   sre5: string;
   classificacao: string;
   familia: string;
+  industriaId?: string;
 }
 
 export interface Industria {
@@ -49,6 +50,7 @@ export interface Endereco {
   sre4?: string;
   sre5?: string;
   motivoBloqueio?: string;
+  industriaId?: string;
 }
 
 export interface Recebimento {

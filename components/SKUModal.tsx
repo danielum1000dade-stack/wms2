@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
-import { SKU } from '../types';
+import { SKU, Industria } from '../types';
 
 interface SKUModalProps {
     sku: Partial<SKU>;
     onSave: (data: Omit<SKU, 'id'>) => void;
     onClose: () => void;
+    industrias: Industria[];
 }
 
-const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose }) => {
+const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias }) => {
      const [formData, setFormData] = useState({
         sku: sku?.sku || '',
         descritivo: sku?.descritivo || '',
@@ -24,9 +25,10 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose }) => {
         sre5: sku?.sre5 || '',
         classificacao: sku?.classificacao || '',
         familia: sku?.familia || '',
+        industriaId: sku?.industriaId || '',
     });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value, type } = e.target;
         setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) : value }));
     }
@@ -57,6 +59,13 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose }) => {
                         <div>
                             <label className="block text-sm font-medium text-gray-700">Família</label>
                             <input type="text" name="familia" value={formData.familia} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Indústria / Proprietário</label>
+                            <select name="industriaId" value={formData.industriaId} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                                <option value="">Nenhuma</option>
+                                {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                            </select>
                         </div>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

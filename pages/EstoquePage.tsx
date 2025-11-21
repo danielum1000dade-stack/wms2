@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Endereco, EnderecoTipo, InventoryCountSession, Etiqueta, EtiquetaStatus, InventoryCountItem, SKU, EnderecoStatus } from '../types';
-import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
+import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria } from '../types';
+import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon, TruckIcon } from '@heroicons/react/24/outline';
+import ReplenishmentModal from '../components/ReplenishmentModal';
 
 const EstoquePage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'consulta' | 'sessoes'>('consulta');
@@ -21,11 +22,11 @@ const EstoquePage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">Inventário e Consulta de Estoque</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
                 <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
-                    <TabButton tabName="consulta" label="Consulta de Posição" icon={MagnifyingGlassIcon} />
+                    <TabButton tabName="consulta" label="Consulta de Estoque" icon={MagnifyingGlassIcon} />
                     <TabButton tabName="sessoes" label="Contagem por Sessão" icon={ListBulletIcon} />
                 </div>
                 <div>
-                    {activeTab === 'consulta' && <ConsultaPosicao />}
+                    {activeTab === 'consulta' && <ConsultaEstoque />}
                     {activeTab === 'sessoes' && <GerenciadorSessoes />}
                 </div>
             </div>
@@ -33,77 +34,143 @@ const EstoquePage: React.FC = () => {
     );
 };
 
-const ConsultaPosicao: React.FC = () => {
-    const { enderecos, etiquetas, skus } = useWMS();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [searchResult, setSearchResult] = useState<{ endereco: Endereco; etiqueta: Etiqueta | null; sku: SKU | null; } | null>(null);
-    const [error, setError] = useState('');
+const ConsultaEstoque: React.FC = () => {
+    const { etiquetas, enderecos, skus, industrias } = useWMS();
+    const [isReplenishmentModalOpen, setIsReplenishmentModalOpen] = useState(false);
+    const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
+    const [feedback, setFeedback] = useState('');
 
-    const handleSearch = () => {
-        if (!searchTerm.trim()) return;
-        
-        setError('');
-        setSearchResult(null);
+    const [filters, setFilters] = useState({
+        sku: '',
+        lote: '',
+        endereco: '',
+        industriaId: 'todos',
+    });
 
-        const endereco = enderecos.find(e => e.codigo.toLowerCase() === searchTerm.toLowerCase());
+    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFilters(prev => ({ ...prev, [name]: value }));
+    };
 
-        if (endereco) {
-            const etiqueta = etiquetas.find(et => et.enderecoId === endereco.id) || null;
-            const sku = etiqueta ? skus.find(s => s.id === etiqueta.skuId) : null;
-            setSearchResult({ endereco, etiqueta, sku });
-        } else {
-            setError(`Endereço "${searchTerm}" não encontrado.`);
-        }
+    const filteredStock = useMemo(() => {
+         return etiquetas
+            .filter(etiqueta => {
+                if (etiqueta.status !== EtiquetaStatus.ARMAZENADA || !etiqueta.enderecoId) return false;
+                
+                const sku = skus.find(s => s.id === etiqueta.skuId);
+                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
+
+                if (!filters.sku && !filters.lote && !filters.endereco && filters.industriaId === 'todos') return false;
+
+                if (filters.sku && (!sku || !sku.sku.toLowerCase().includes(filters.sku.toLowerCase()))) return false;
+                if (filters.lote && (!etiqueta.lote || !etiqueta.lote.toLowerCase().includes(filters.lote.toLowerCase()))) return false;
+                if (filters.endereco && (!endereco || !endereco.nome.toLowerCase().includes(filters.endereco.toLowerCase()))) return false;
+                if (filters.industriaId !== 'todos' && (!sku || sku.industriaId !== filters.industriaId)) return false;
+                
+                return true;
+            })
+            .map(etiqueta => {
+                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
+                const sku = skus.find(s => s.id === etiqueta.skuId);
+                const industria = sku ? industrias.find(i => i.id === sku.industriaId) : null;
+                return { etiqueta, endereco, sku, industria };
+            })
+            .sort((a, b) => (a.endereco?.nome || '').localeCompare(b.endereco?.nome || ''));
+    }, [etiquetas, enderecos, skus, industrias, filters]);
+    
+    const openReplenishmentModal = (etiqueta: Etiqueta) => {
+        setSelectedEtiqueta(etiqueta);
+        setIsReplenishmentModalOpen(true);
+    };
+    
+    const handleMissionCreated = () => {
+        setFeedback('Missão de ressuprimento criada com sucesso!');
+        setTimeout(() => setFeedback(''), 5000);
+        setIsReplenishmentModalOpen(false);
+        setSelectedEtiqueta(null);
     };
 
     return (
         <div className="space-y-4">
-             <h2 className="text-xl font-semibold">Consultar Posição no Armazém</h2>
-             <div className="flex gap-2">
-                <input 
-                    type="text"
-                    value={searchTerm}
-                    onChange={e => setSearchTerm(e.target.value.toUpperCase())}
-                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
-                    placeholder="Digite ou escaneie o código do endereço (ex: A01-01-01)"
-                    className="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"
-                />
-                <button onClick={handleSearch} className="bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700 flex items-center">
-                    <MagnifyingGlassIcon className="h-5 w-5 mr-2" /> Buscar
-                </button>
-             </div>
-
-             {error && <p className="text-red-600 bg-red-50 p-3 rounded-md">{error}</p>}
-             {searchResult && (
-                <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in">
-                    <div className="flex justify-between items-start">
-                        <div>
-                             <h3 className="text-2xl font-bold text-gray-800">{searchResult.endereco.nome}</h3>
-                             <p className="text-gray-500">{searchResult.endereco.tipo}</p>
-                        </div>
-                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${searchResult.endereco.status === 'Livre' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                            {searchResult.endereco.status}
-                        </span>
-                    </div>
-                     <hr className="my-4" />
-                     <h4 className="font-semibold text-gray-700">Conteúdo Esperado pelo Sistema</h4>
-                     {searchResult.etiqueta ? (
-                        <div className="mt-2 space-y-2">
-                            <p><strong>Pallet:</strong> <span className="font-mono text-indigo-600">{searchResult.etiqueta.id}</span></p>
-                            <p><strong>SKU:</strong> {searchResult.sku?.sku} - {searchResult.sku?.descritivo}</p>
-                            <p><strong>Quantidade:</strong> {searchResult.etiqueta.quantidadeCaixas} caixas</p>
-                            <p><strong>Lote:</strong> {searchResult.etiqueta.lote}</p>
-                            <p><strong>Validade:</strong> {searchResult.etiqueta.validade ? new Date(searchResult.etiqueta.validade).toLocaleDateString('pt-BR') : 'N/A'}</p>
-                        </div>
-                     ) : (
-                        <p className="mt-2 text-gray-600 bg-gray-50 p-3 rounded-md">Sistema espera que esta posição esteja vazia.</p>
-                     )}
+            <h2 className="text-xl font-semibold">Localizar Produto no Estoque</h2>
+            {feedback && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert">{feedback}</div>}
+            
+            <div className="bg-gray-50 p-4 rounded-lg border grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">SKU</label>
+                    <input type="text" name="sku" value={filters.sku} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
                 </div>
-             )}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Lote</label>
+                    <input type="text" name="lote" value={filters.lote} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                </div>
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700">Endereço</label>
+                    <input type="text" name="endereco" value={filters.endereco} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700">Indústria</label>
+                     <select name="industriaId" value={filters.industriaId} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                        <option value="todos">Todas</option>
+                        {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                    </select>
+                </div>
+            </div>
+
+            <div className="overflow-x-auto bg-white rounded-lg shadow-md mt-4">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Endereço</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd.</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lote</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validade</th>
+                            <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredStock.map(({ etiqueta, endereco, sku }) => (
+                            <tr key={etiqueta.id}>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{sku?.sku}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{sku?.descritivo}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{endereco?.nome}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.quantidadeCaixas}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.lote}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.validade ? new Date(etiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A'}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button
+                                        onClick={() => openReplenishmentModal(etiqueta)}
+                                        className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
+                                        title="Criar Missão de Ressuprimento"
+                                    >
+                                        <TruckIcon className="h-4 w-4" /> Ressuprir
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {filteredStock.length === 0 && (
+                            <tr>
+                                <td colSpan={7} className="text-center py-10 text-gray-500">
+                                    Nenhum item encontrado. Use os filtros acima para buscar.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+
+            {isReplenishmentModalOpen && selectedEtiqueta && (
+                <ReplenishmentModal
+                    etiqueta={selectedEtiqueta}
+                    onClose={() => setIsReplenishmentModalOpen(false)}
+                    onMissionCreated={handleMissionCreated}
+                />
+            )}
         </div>
     );
 };
-
 
 const GerenciadorSessoes: React.FC = () => {
     const { inventoryCountSessions } = useWMS();

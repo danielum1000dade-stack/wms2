@@ -83,6 +83,7 @@ interface WMSContextType {
     addPedidos: (pedidos: Pedido[]) => void;
     missoes: Missao[];
     createPickingMissions: (pedido: Pedido) => void;
+    createMission: (missionData: Omit<Missao, 'id' | 'status'>) => Missao;
     palletsConsolidados: PalletConsolidado[];
     addPalletConsolidado: (pallet: Omit<PalletConsolidado, 'id'>) => PalletConsolidado;
     divergencias: Divergencia[];
@@ -180,11 +181,24 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const industriaToDelete = industrias.find(i => i.id === id);
         if (!industriaToDelete) return false;
 
-        const isIndustriaInUse = recebimentos.some(r => r.fornecedor === industriaToDelete.nome);
-        if (isIndustriaInUse) {
-            console.error(`Attempted to delete industria ${id} which is in use.`);
+        const isIndustriaInRecebimento = recebimentos.some(r => r.fornecedor === industriaToDelete.nome);
+        if (isIndustriaInRecebimento) {
+            console.error(`Attempted to delete industria ${id} which is in use in a recebimento.`);
             return false;
         }
+        
+        const isIndustriaInSku = skus.some(s => s.industriaId === id);
+        if (isIndustriaInSku) {
+            console.error(`Attempted to delete industria ${id} which is linked to an SKU.`);
+            return false;
+        }
+
+        const isIndustriaInEndereco = enderecos.some(e => e.industriaId === id);
+        if (isIndustriaInEndereco) {
+            console.error(`Attempted to delete industria ${id} which is linked to an Endereco.`);
+            return false;
+        }
+
         setIndustrias(prev => prev.filter(i => i.id !== id));
         return true;
     };
@@ -396,6 +410,16 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setPedidos(pedidos.map(p => p.id === pedido.id ? {...p, status: 'Em Separação'} : p));
         }
     };
+
+    const createMission = (missionData: Omit<Missao, 'id' | 'status'>): Missao => {
+        const newMission: Missao = {
+            ...missionData,
+            id: `M-${generateId()}`,
+            status: 'Pendente',
+        };
+        setMissoes(prev => [...prev, newMission]);
+        return newMission;
+    };
     
     // Pallet Consolidado Management
     const addPalletConsolidado = (pallet: Omit<PalletConsolidado, 'id'>) => {
@@ -550,7 +574,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, addEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
         pedidos, addPedidos,
-        missoes, createPickingMissions,
+        missoes, createPickingMissions, createMission,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,

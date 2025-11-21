@@ -49,7 +49,7 @@ const CadastroPage: React.FC = () => {
 
 // CadastroEnderecos Component
 const CadastroEnderecos: React.FC = () => {
-    const { enderecos, addEndereco, updateEndereco, deleteEndereco, addEnderecosBatch } = useWMS();
+    const { enderecos, addEndereco, updateEndereco, deleteEndereco, addEnderecosBatch, industrias } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentEndereco, setCurrentEndereco] = useState<Partial<Endereco> | null>(null);
@@ -128,44 +128,47 @@ const CadastroEnderecos: React.FC = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capacidade</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indústria Dedicada</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {enderecos.map(e => (
-                            <tr key={e.id}>
-                                <td className="px-6 py-4 whitespace-nowrap">{e.codigo}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{e.nome}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{e.tipo}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{e.capacidade} pallets</td>
-                                <td className="px-6 py-4 whitespace-nowrap">
-                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                        e.status === EnderecoStatus.LIVRE ? 'bg-green-100 text-green-800' :
-                                        e.status === EnderecoStatus.OCUPADO ? 'bg-yellow-100 text-yellow-800' :
-                                        e.status === EnderecoStatus.BLOQUEADO ? 'bg-red-100 text-red-800' :
-                                        'bg-gray-100 text-gray-800'
-                                    }`}>
-                                        {e.status}
-                                    </span>
-                                </td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button onClick={() => openModal(e)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
-                                    <button onClick={() => deleteEndereco(e.id)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
-                                </td>
-                            </tr>
-                        ))}
+                        {enderecos.map(e => {
+                            const industria = industrias.find(i => i.id === e.industriaId);
+                            return (
+                                <tr key={e.id}>
+                                    <td className="px-6 py-4 whitespace-nowrap">{e.codigo}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{e.nome}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{e.tipo}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{industria?.nome || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            e.status === EnderecoStatus.LIVRE ? 'bg-green-100 text-green-800' :
+                                            e.status === EnderecoStatus.OCUPADO ? 'bg-yellow-100 text-yellow-800' :
+                                            e.status === EnderecoStatus.BLOQUEADO ? 'bg-red-100 text-red-800' :
+                                            'bg-gray-100 text-gray-800'
+                                        }`}>
+                                            {e.status}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onClick={() => openModal(e)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => deleteEndereco(e.id)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
-            {isModalOpen && <EnderecoModal endereco={currentEndereco} onSave={handleSave} onClose={closeModal} />}
+            {isModalOpen && <EnderecoModal endereco={currentEndereco} industrias={industrias} onSave={handleSave} onClose={closeModal} />}
             {isImportModalOpen && <ImportExcelModal title="Importar Endereços" columnConfig={enderecoColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
 }
 
-const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (data: any) => void, onClose: () => void }> = ({ endereco, onSave, onClose }) => {
+const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: Industria[], onSave: (data: any) => void, onClose: () => void }> = ({ endereco, industrias, onSave, onClose }) => {
     const [formData, setFormData] = useState({
         codigo: endereco?.codigo || '',
         nome: endereco?.nome || '',
@@ -179,6 +182,7 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
         sre3: endereco?.sre3 || '',
         sre4: endereco?.sre4 || '',
         sre5: endereco?.sre5 || '',
+        industriaId: endereco?.industriaId || '',
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -264,6 +268,15 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
                          </div>
                     </div>
 
+                    <div className="pt-4 border-t">
+                        <label htmlFor="industriaId" className="block text-sm font-medium text-gray-700">Indústria / Proprietário (Opcional)</label>
+                        <p className="text-xs text-gray-500 mb-2">Dedica este endereço para produtos de uma indústria específica.</p>
+                        <select name="industriaId" id="industriaId" value={formData.industriaId} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3 bg-white">
+                            <option value="">Nenhuma</option>
+                            {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
+                        </select>
+                    </div>
+
 
                     <div className="flex justify-end space-x-2 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
@@ -278,7 +291,7 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, onSave: (dat
 
 // CadastroSKUs Component
 const CadastroSKUs: React.FC = () => {
-    const { skus, addSku, updateSku, deleteSku, addSkusBatch } = useWMS();
+    const { skus, addSku, updateSku, deleteSku, addSkusBatch, industrias } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentSku, setCurrentSku] = useState<Partial<SKU> | null>(null);
@@ -376,25 +389,30 @@ const CadastroSKUs: React.FC = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descritivo</th>
                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família</th>
+                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indústria</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                         </tr>
                     </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
-                        {skus.map(s => (
-                            <tr key={s.id}>
-                                <td className="px-6 py-4 whitespace-nowrap">{s.sku}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{s.descritivo}</td>
-                                <td className="px-6 py-4 whitespace-nowrap">{s.familia}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button onClick={() => openModal(s)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
-                                    <button onClick={() => handleDeleteSku(s)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
-                                </td>
-                            </tr>
-                        ))}
+                        {skus.map(s => {
+                            const industria = industrias.find(i => i.id === s.industriaId);
+                            return (
+                                <tr key={s.id}>
+                                    <td className="px-6 py-4 whitespace-nowrap">{s.sku}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{s.descritivo}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{s.familia}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{industria?.nome || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button onClick={() => openModal(s)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => handleDeleteSku(s)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
-            {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} />}
+            {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} industrias={industrias} />}
             {isImportModalOpen && <ImportExcelModal title="Importar SKUs" columnConfig={skuColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
@@ -430,7 +448,7 @@ const CadastroIndustrias: React.FC = () => {
         if (window.confirm(`Tem certeza que deseja excluir a indústria "${industria.nome}"?`)) {
             const success = deleteIndustria(industria.id);
             if (!success) {
-                alert(`Não é possível excluir a indústria "${industria.nome}", pois ela já está vinculada a um recebimento.`);
+                alert(`Não é possível excluir a indústria "${industria.nome}", pois ela já está vinculada a um recebimento, SKU ou endereço.`);
             }
         }
     }
