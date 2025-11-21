@@ -184,6 +184,9 @@ export interface InventoryCountItem {
     foundEtiquetaId: string | null;
     expectedSkuId: string | null;
     expectedQuantity: number | null;
+    countedSkuId: string | null;
+    countedLote: string | null;
+    countedValidade: string | null;
     countedQuantity: number | null;
     discrepancy: number; // calculated: counted - expected
     countedAt: string;

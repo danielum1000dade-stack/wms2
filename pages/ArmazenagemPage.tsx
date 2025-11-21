@@ -18,7 +18,9 @@ const ArmazenagemPage: React.FC = () => {
     const [isPalletScanning, setIsPalletScanning] = useState(false);
     const [isAddressScanning, setIsAddressScanning] = useState(false);
     
-    const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+    const [errorFeedback, setErrorFeedback] = useState<string | null>(null);
+    const [lastStoredInfo, setLastStoredInfo] = useState<{ palletId: string, enderecoNome: string } | null>(null);
+
     const scannerRef = useRef<any>(null);
     const palletCardRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
 
@@ -36,20 +38,17 @@ const ArmazenagemPage: React.FC = () => {
 
         const skuSres = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean);
         
-        // Se o SKU tem SREs, procure um endereço compatível
         if (skuSres.length > 0) {
             const enderecosCompativeis = enderecosDisponiveis.filter(e => {
                 const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
-                if (endSres.length === 0) return false; // Endereço sem SRE não é compatível com SKU que exige SRE
+                if (endSres.length === 0) return false;
                 return skuSres.some(sre => endSres.includes(sre));
             });
             if (enderecosCompativeis.length > 0) {
-                // Poderia ter uma lógica mais complexa aqui (ex: o que tem menos pallets), mas por agora o primeiro está bom
                 return enderecosCompativeis[0];
             }
         }
         
-        // Se SKU não tem SRE (ou não achou compatível), procure um endereço "genérico" (sem SRE)
         const enderecosGenericos = enderecosDisponiveis.filter(e => {
             const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
             return endSres.length === 0;
@@ -59,21 +58,19 @@ const ArmazenagemPage: React.FC = () => {
             return enderecosGenericos[0];
         }
 
-        // Como último recurso, se o SKU não tem SRE, retorne qualquer endereço livre
         if (skuSres.length === 0) {
             return enderecosDisponiveis[0];
         }
         
-        return null; // Nenhuma sugestão encontrada
+        return null;
     };
 
     const handleSelectEtiqueta = (etiqueta: Etiqueta) => {
-        resetState(true); // Keep pallet selection UI
-        setFeedback(null);
+        resetState(true);
+        setErrorFeedback(null);
         setSelectedEtiqueta(etiqueta);
         setPalletIdInput(etiqueta.id);
 
-        // Scroll to the selected pallet in the list
         palletCardRefs.current[etiqueta.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
         const skuDoPallet = skus.find(s => s.id === etiqueta.skuId);
@@ -100,14 +97,12 @@ const ArmazenagemPage: React.FC = () => {
         const pallet = palletsParaArmazenar.find(e => e.id.toLowerCase() === id.toLowerCase());
         if (pallet) {
             handleSelectEtiqueta(pallet);
-            setFeedback(null);
         } else {
             resetState();
-            setFeedback({ type: 'error', message: 'Pallet não encontrado ou não está aguardando armazenagem.' });
+            setErrorFeedback('Pallet não encontrado ou não está aguardando armazenagem.');
         }
     };
     
-    // Pallet Scanner Logic
     useEffect(() => {
         if (isPalletScanning) {
             const palletScanner = new Html5QrcodeScanner("pallet-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
@@ -124,12 +119,11 @@ const ArmazenagemPage: React.FC = () => {
         }
     }, [isPalletScanning, palletsParaArmazenar]);
 
-    // Address Scanner Logic
     useEffect(() => {
         if (isAddressScanning && finalEndereco) {
             scannerRef.current = new Html5QrcodeScanner("address-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
             scannerRef.current.render(onAddressScanSuccess, () => {});
-        } else if (scannerRef.current?.getState() !== 1) { // 1 = NOT_STARTED
+        } else if (scannerRef.current?.getState() !== 1) {
              scannerRef.current?.clear().catch((err: any) => console.error("Scanner clear failed", err));
         }
         return () => {
@@ -141,38 +135,36 @@ const ArmazenagemPage: React.FC = () => {
 
     const onAddressScanSuccess = (decodedText: string) => {
         if (!finalEndereco || !selectedEtiqueta) return;
-
-        if (decodedText === finalEndereco.codigo) {
-            armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
-            setFeedback({ type: 'success', message: `Pallet ${selectedEtiqueta.id} armazenado em ${finalEndereco.nome} com sucesso!`});
-            setTimeout(() => { resetState(); setFeedback(null); }, 2000);
-        } else {
-            setFeedback({ type: 'error', message: `Endereço incorreto! Escaneado: ${decodedText}. Esperado: ${finalEndereco.codigo}.`});
-        }
+        
         setIsAddressScanning(false);
+
+        if (decodedText.toUpperCase() === finalEndereco.codigo.toUpperCase()) {
+            const result = armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
+            if(result.success) {
+                const info = { palletId: selectedEtiqueta.id, enderecoNome: finalEndereco.nome };
+                setLastStoredInfo(info);
+                resetState();
+                setTimeout(() => setLastStoredInfo(null), 3000);
+            } else {
+                 setErrorFeedback(result.message || 'Falha ao armazenar. Tente novamente.');
+            }
+        } else {
+            setErrorFeedback(`Endereço incorreto! Escaneado: ${decodedText}. Esperado: ${finalEndereco.codigo}.`);
+        }
     };
 
     const handleManualConfirm = () => {
         if (!finalEndereco || !selectedEtiqueta) return;
     
-        if (window.confirm(`Tem certeza que deseja confirmar a armazenagem em ${finalEndereco.nome} manualmente, sem escanear o endereço?\n\nUse esta opção apenas se a leitura do código não for possível.`)) {
-            // Capture values before state changes
-            const etiquetaId = selectedEtiqueta.id;
-            const enderecoId = finalEndereco.id;
-            const enderecoNome = finalEndereco.nome;
-            
-            // 1. Perform the storage action. This will trigger a re-render that removes the pallet from the list.
-            armazenarEtiqueta(etiquetaId, enderecoId);
-            
-            // 2. Set the success message. This will be displayed in the next render.
-            setFeedback({ type: 'success', message: `Pallet ${etiquetaId} armazenado em ${enderecoNome} com sucesso!`});
-            
-            // 3. After a delay, fully reset the UI to its initial state and clear the message.
-            // This gives the user time to see the feedback before the UI resets.
-            setTimeout(() => {
-                resetState();
-                setFeedback(null);
-            }, 2000);
+        const result = armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
+        
+        if (result.success) {
+            const info = { palletId: selectedEtiqueta.id, enderecoNome: finalEndereco.nome };
+            setLastStoredInfo(info);
+            resetState();
+            setTimeout(() => setLastStoredInfo(null), 3000);
+        } else {
+            setErrorFeedback(result.message || 'Ocorreu um erro desconhecido na armazenagem.');
         }
     };
 
@@ -265,13 +257,13 @@ const ArmazenagemPage: React.FC = () => {
                                 const found = enderecos.find(end => end.codigo.toUpperCase() === addressToFind);
                                 if (found) {
                                     if (found.status !== EnderecoStatus.LIVRE) {
-                                        setFeedback({type: 'error', message: `Endereço "${found.codigo}" está ${found.status}!`});
+                                        setErrorFeedback(`Endereço "${found.codigo}" está ${found.status}!`);
                                     } else {
                                         setFinalEndereco(found);
-                                        setFeedback(null);
+                                        setErrorFeedback(null);
                                     }
                                 } else if (manualAddressInput) {
-                                    setFeedback({type: 'error', message: 'Endereço não encontrado.'});
+                                    setErrorFeedback('Endereço não encontrado.');
                                 }
                             }}
                             className="flex-shrink-0 bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600"
@@ -288,9 +280,15 @@ const ArmazenagemPage: React.FC = () => {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900">Armazenagem de Pallets</h1>
             
-            {feedback && (
-                <div className={`p-4 rounded-md ${feedback.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    {feedback.message}
+            {lastStoredInfo && (
+                <div className="p-4 rounded-md bg-green-100 text-green-800 animate-fade-in">
+                    Pallet <strong>{lastStoredInfo.palletId}</strong> armazenado em <strong>{lastStoredInfo.enderecoNome}</strong> com sucesso!
+                </div>
+            )}
+            
+            {errorFeedback && (
+                <div className="p-4 rounded-md bg-red-100 text-red-800">
+                    {errorFeedback}
                 </div>
             )}
 

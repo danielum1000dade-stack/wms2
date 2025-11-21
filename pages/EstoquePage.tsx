@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Endereco, EnderecoTipo, InventoryCountSession, Etiqueta, EtiquetaStatus, InventoryCountItem, SKU } from '../types';
+import { Endereco, EnderecoTipo, InventoryCountSession, Etiqueta, EtiquetaStatus, InventoryCountItem, SKU, EnderecoStatus } from '../types';
 import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 
 const EstoquePage: React.FC = () => {
@@ -309,7 +309,7 @@ const SetupCountModal: React.FC<{ onStart: (session: InventoryCountSession) => v
 };
 
 const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () => void }> = ({ session, onBack }) => {
-    const { enderecos, etiquetas, skus, recordCountItem, getCountItemsBySession, finishInventoryCount, undoLastCount } = useWMS();
+    const { enderecos, etiquetas, skus, recordCountItem, getCountItemsBySession, finishInventoryCount, undoLastCount, addEtiqueta, updateEtiqueta, updateEndereco } = useWMS();
     
     const countItems = useMemo(() => getCountItemsBySession(session.id), [session.id, getCountItemsBySession]);
 
@@ -344,11 +344,75 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
     const [countedQuantity, setCountedQuantity] = useState<number | ''>('');
     const [justification, setJustification] = useState('');
     const [feedback, setFeedback] = useState('');
+    const [countedSkuInput, setCountedSkuInput] = useState('');
+    const [foundCountedSku, setFoundCountedSku] = useState<SKU | null>(null);
+    const [countedSkuError, setCountedSkuError] = useState('');
+    const [countedLote, setCountedLote] = useState('');
+    const [countedValidade, setCountedValidade] = useState('');
 
     const expectedEtiqueta = useMemo(() => {
         if (!currentPendingLocation) return null;
         return etiquetas.find(et => et.enderecoId === currentPendingLocation.id) || null;
     }, [currentPendingLocation, etiquetas]);
+
+    const resetCountForm = () => {
+        setFoundEtiquetaId('');
+        setCountedQuantity('');
+        setJustification('');
+        setCountedSkuInput('');
+        setFoundCountedSku(null);
+        setCountedSkuError('');
+        setCountedLote('');
+        setCountedValidade('');
+        setFeedback('');
+    };
+
+    useEffect(() => {
+        if (currentPendingLocation) {
+            if (expectedEtiqueta) {
+                const sku = skus.find(s => s.id === expectedEtiqueta.skuId);
+                setFoundEtiquetaId(expectedEtiqueta.id);
+                setCountedQuantity(expectedEtiqueta.quantidadeCaixas ?? '');
+                setCountedLote(expectedEtiqueta.lote ?? '');
+                const formattedDate = expectedEtiqueta.validade ? new Date(expectedEtiqueta.validade).toISOString().split('T')[0] : '';
+                setCountedValidade(formattedDate);
+                if (sku) {
+                    setCountedSkuInput(sku.sku);
+                    setFoundCountedSku(sku);
+                    setCountedSkuError('');
+                } else {
+                    setCountedSkuInput('');
+                    setFoundCountedSku(null);
+                }
+            } else {
+                resetCountForm();
+            }
+        }
+    }, [currentPendingLocation, expectedEtiqueta, skus]);
+
+    const handleSkuInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setCountedSkuInput(value);
+        setFoundCountedSku(null);
+        setCountedSkuError('');
+    };
+
+    const handleSkuBlur = () => {
+        if (!countedSkuInput.trim()) {
+            if (Number(countedQuantity) > 0 || foundEtiquetaId) {
+                setCountedSkuError('SKU é obrigatório se houver quantidade ou etiqueta.');
+            }
+            return;
+        }
+        const sku = skus.find(s => s.sku.toLowerCase() === countedSkuInput.toLowerCase());
+        if (sku) {
+            setFoundCountedSku(sku);
+            setCountedSkuError('');
+        } else {
+            setFoundCountedSku(null);
+            setCountedSkuError('SKU não encontrado no cadastro.');
+        }
+    };
 
     const progress = (countedLocationIds.size / locationsToCount.length) * 100;
 
@@ -363,6 +427,9 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
             expectedSkuId: expectedEtiqueta?.skuId || null,
             expectedQuantity: expectedEtiqueta?.quantidadeCaixas || null,
             foundEtiquetaId: null,
+            countedSkuId: null,
+            countedLote: null,
+            countedValidade: null,
             countedQuantity: null,
             discrepancy: 0,
             countedAt: new Date().toISOString(),
@@ -371,36 +438,75 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
         };
 
         if (status === 'Contado') {
-            if (!foundEtiquetaId || countedQuantity === '') {
-                setFeedback('Preencha o ID da etiqueta e a quantidade.');
+            if (countedQuantity === '' || Number(countedQuantity) < 0) {
+                setFeedback('Preencha a quantidade contada com um valor válido.');
                 return;
             }
-            if (!expectedEtiqueta && !justification) {
-                setFeedback('É necessário fornecer uma justificativa para um pallet encontrado em um local vazio.');
+            if (Number(countedQuantity) > 0 && !foundCountedSku) {
+                handleSkuBlur();
+                setFeedback('SKU contado é inválido ou não foi encontrado.');
                 return;
             }
 
-            itemData.foundEtiquetaId = foundEtiquetaId;
-            itemData.countedQuantity = Number(countedQuantity);
-            itemData.discrepancy = itemData.countedQuantity - (itemData.expectedQuantity || 0);
-            
-            if(foundEtiquetaId !== itemData.expectedEtiquetaId) {
-                itemData.discrepancy = itemData.countedQuantity;
+            const countedQty = Number(countedQuantity);
+            let finalFoundEtiquetaId: string | null = null;
+
+            // Case A: Product found in an address expected to be empty. Create a new pallet.
+            if (!expectedEtiqueta && countedQty > 0 && foundCountedSku) {
+                const newEtiqueta = addEtiqueta({
+                    skuId: foundCountedSku.id,
+                    quantidadeCaixas: countedQty,
+                    lote: countedLote,
+                    validade: countedValidade,
+                    enderecoId: currentPendingLocation.id,
+                    status: EtiquetaStatus.ARMAZENADA,
+                    dataApontamento: new Date().toISOString(),
+                    dataArmazenagem: new Date().toISOString(),
+                });
+                finalFoundEtiquetaId = newEtiqueta.id;
             }
-            if (justification) {
-                itemData.justification = justification;
+            // Case B: Product found where one was expected. Update the existing pallet's data.
+            else if (expectedEtiqueta) {
+                const updatedEtiqueta: Etiqueta = {
+                    ...expectedEtiqueta,
+                    skuId: foundCountedSku?.id || expectedEtiqueta.skuId,
+                    quantidadeCaixas: countedQty,
+                    lote: countedLote,
+                    validade: countedValidade,
+                };
+                updateEtiqueta(updatedEtiqueta);
+                finalFoundEtiquetaId = expectedEtiqueta.id;
             }
+
+            itemData.foundEtiquetaId = finalFoundEtiquetaId;
+            itemData.countedQuantity = countedQty;
+            itemData.countedSkuId = foundCountedSku?.id || null;
+            itemData.countedLote = countedLote || null;
+            itemData.countedValidade = countedValidade || null;
+            itemData.discrepancy = (itemData.countedQuantity || 0) - (itemData.expectedQuantity || 0);
 
         } else if (status === 'Vazio') {
              itemData.countedQuantity = 0;
              itemData.discrepancy = 0 - (itemData.expectedQuantity || 0);
+             // If a pallet was expected but the location is empty, update the pallet and location
+             if (expectedEtiqueta) {
+                 updateEtiqueta({ ...expectedEtiqueta, enderecoId: undefined, status: EtiquetaStatus.APONTADA });
+                 updateEndereco({ ...currentPendingLocation, status: EnderecoStatus.LIVRE });
+             }
         }
 
         recordCountItem(itemData);
-        setFoundEtiquetaId('');
-        setCountedQuantity('');
-        setJustification('');
+        resetCountForm();
     };
+
+    const formatDate = (dateString: string | null | undefined) => {
+        if (!dateString) return 'N/A';
+        try {
+            return new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+        } catch {
+            return 'Data Inválida';
+        }
+    }
 
     if (session.status === 'Concluído' || !currentPendingLocation) {
         // Summary View
@@ -421,32 +527,37 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
                          <tbody className="bg-white divide-y divide-gray-200">
                              {countItems.map(item => {
                                 const endereco = enderecos.find(e => e.id === item.enderecoId);
+                                const expectedEtiqueta = etiquetas.find(et => et.id === item.expectedEtiquetaId);
                                 const expectedSku = skus.find(s => s.id === item.expectedSkuId);
-                                const foundEtiqueta = etiquetas.find(et => et.id === item.foundEtiquetaId);
-                                const foundSku = foundEtiqueta ? skus.find(s => s.id === foundEtiqueta.skuId) : null;
-                                 const hasDiscrepancy = item.discrepancy !== 0 || (item.expectedEtiquetaId !== item.foundEtiquetaId && item.status !== 'Vazio' && item.status !== 'Pulado');
+                                const countedSku = skus.find(s => s.id === item.countedSkuId);
+                                const hasDiscrepancy = item.status === 'Contado' ? (
+                                    item.discrepancy !== 0 ||
+                                    item.expectedSkuId !== item.countedSkuId ||
+                                    (expectedEtiqueta?.lote ?? null) !== item.countedLote ||
+                                    (expectedEtiqueta?.validade ? new Date(expectedEtiqueta.validade).toISOString().split('T')[0] : null) !== item.countedValidade
+                                ) : item.discrepancy !== 0;
 
                                 return (
                                     <tr key={item.id} className={hasDiscrepancy ? 'bg-red-50' : ''}>
                                         <td className="px-4 py-2 whitespace-nowrap font-semibold">{endereco?.nome}</td>
                                         <td className="px-4 py-2 whitespace-nowrap text-sm">
-                                            {item.expectedEtiquetaId ? `${item.expectedEtiquetaId} (${expectedSku?.sku}) - ${item.expectedQuantity} cx` : 'Vazio'}
+                                            {item.expectedEtiquetaId 
+                                                ? `(${expectedSku?.sku}) ${item.expectedQuantity} cx, L: ${expectedEtiqueta?.lote}, V: ${formatDate(expectedEtiqueta?.validade)}` 
+                                                : 'Vazio'}
                                         </td>
-                                         <td className="px-4 py-2 whitespace-nowrap text-sm">
-                                            {item.status === 'Contado' ? `${item.foundEtiquetaId} (${foundSku?.sku}) - ${item.countedQuantity} cx` : item.status}
+                                        <td className="px-4 py-2 whitespace-nowrap text-sm">
+                                            {item.status === 'Contado' 
+                                                ? `(${countedSku?.sku || 'N/A'}) ${item.countedQuantity} cx, L: ${item.countedLote}, V: ${formatDate(item.countedValidade)}` 
+                                                : item.status}
                                         </td>
-                                        <td className={`px-4 py-2 whitespace-nowrap font-bold ${hasDiscrepancy ? 'text-red-600' : 'text-green-600'}`}>
-                                            <div>
-                                                {item.discrepancy > 0 && `+${item.discrepancy}`}
-                                                {item.discrepancy < 0 && item.discrepancy}
-                                                {item.discrepancy === 0 && item.expectedEtiquetaId !== item.foundEtiquetaId && item.status==='Contado' && 'SKU Divergente'}
-                                                {item.discrepancy === 0 && item.expectedEtiquetaId === item.foundEtiquetaId && 'OK'}
+                                        <td className={`px-4 py-2 whitespace-nowrap font-bold text-sm ${hasDiscrepancy ? 'text-red-600' : 'text-green-600'}`}>
+                                            <div className="flex flex-col">
+                                                {item.discrepancy !== 0 && <span>Qtd: {item.discrepancy > 0 ? `+${item.discrepancy}`: item.discrepancy}</span>}
+                                                {item.status === 'Contado' && item.expectedSkuId !== item.countedSkuId && <span className="text-xs">SKU Divergente</span>}
+                                                {item.status === 'Contado' && expectedEtiqueta?.lote !== item.countedLote && <span className="text-xs">Lote Divergente</span>}
+                                                {item.status === 'Contado' && (expectedEtiqueta?.validade ? new Date(expectedEtiqueta.validade).toISOString().split('T')[0] : null) !== item.countedValidade && <span className="text-xs">Validade Divergente</span>}
+                                                {!hasDiscrepancy && <span>OK</span>}
                                             </div>
-                                            {item.justification && (
-                                                <div className="text-xs font-normal text-gray-500 italic mt-1 max-w-xs whitespace-normal">
-                                                    Just: {item.justification}
-                                                </div>
-                                            )}
                                         </td>
                                     </tr>
                                 )
@@ -470,7 +581,7 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
                 </div>
                 <div className="flex justify-between text-sm font-medium text-gray-600">
                     <span>Progresso da Contagem</span>
-                    <span>{countedLocationIds.size} / {locationsToCount.length}</span>
+                    <span>{countedLocationIds.size + 1} / {locationsToCount.length}</span>
                 </div>
             </div>
 
@@ -501,26 +612,40 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
                 <div className="space-y-4">
                      <h3 className="font-semibold text-lg">Sua Contagem:</h3>
                      {feedback && <p className="text-red-500 text-sm">{feedback}</p>}
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700">ID da Etiqueta Lida</label>
-                        <input type="text" value={foundEtiquetaId} onChange={e => setFoundEtiquetaId(e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                    </div>
-                     <div>
-                        <label className="block text-sm font-medium text-gray-700">Quantidade Contada</label>
-                        <input type="number" value={countedQuantity} onChange={e => setCountedQuantity(e.target.value === '' ? '' : parseInt(e.target.value, 10))} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                    </div>
-                    {!expectedEtiqueta && (
-                         <div>
-                            <label className="block text-sm font-medium text-gray-700">Justificativa para Sobra</label>
-                            <textarea
-                                value={justification}
-                                onChange={e => setJustification(e.target.value)}
-                                rows={2}
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"
-                                placeholder="Ex: Pallet encontrado sem registro no sistema."
-                            />
+                    <div className="p-4 border rounded-md space-y-4 bg-gray-50">
+                        <h4 className="font-semibold text-gray-700">Informações do Pallet Contado</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">ID da Etiqueta Lida (Opcional)</label>
+                                <input type="text" value={foundEtiquetaId} onChange={e => setFoundEtiquetaId(e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">SKU Contado</label>
+                                <input
+                                    type="text"
+                                    value={countedSkuInput}
+                                    onChange={handleSkuInputChange}
+                                    onBlur={handleSkuBlur}
+                                    placeholder="Código do SKU"
+                                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"
+                                />
+                                {foundCountedSku && ( <p className="text-xs text-green-700 mt-1 truncate" title={foundCountedSku.descritivo}>✓ {foundCountedSku.descritivo}</p> )}
+                                {countedSkuError && ( <p className="text-xs text-red-700 mt-1">{countedSkuError}</p> )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Lote Contado</label>
+                                <input type="text" value={countedLote} onChange={e => setCountedLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Validade Contada</label>
+                                <input type="date" value={countedValidade} onChange={e => setCountedValidade(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 font-bold">Quantidade Contada</label>
+                                <input type="number" value={countedQuantity} onChange={e => setCountedQuantity(e.target.value === '' ? '' : parseInt(e.target.value, 10))} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                            </div>
                         </div>
-                    )}
+                    </div>
                     <button onClick={() => handleSubmitCount('Contado')} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg shadow hover:bg-green-700">Confirmar Contagem</button>
                     <div className="grid grid-cols-2 gap-2">
                         <button onClick={() => handleSubmitCount('Vazio')} className="w-full bg-yellow-500 text-white py-2 rounded-lg shadow hover:bg-yellow-600">Endereço Vazio</button>

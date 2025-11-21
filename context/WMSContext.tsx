@@ -72,12 +72,13 @@ interface WMSContextType {
     etiquetas: Etiqueta[];
     getEtiquetaById: (id: string) => Etiqueta | undefined;
     updateEtiqueta: (etiqueta: Etiqueta) => void;
+    addEtiqueta: (etiquetaData: Partial<Etiqueta>) => Etiqueta;
     deleteEtiqueta: (id: string) => { success: boolean, message?: string };
     deleteEtiquetas: (ids: string[]) => { success: boolean, message?: string };
     getEtiquetasByRecebimento: (recebimentoId: string) => Etiqueta[];
     getEtiquetasPendentesApontamento: () => Etiqueta[];
     apontarEtiqueta: (id: string, data: Partial<Etiqueta>) => void;
-    armazenarEtiqueta: (id: string, enderecoId: string) => void;
+    armazenarEtiqueta: (id: string, enderecoId: string) => { success: boolean, message?: string };
     pedidos: Pedido[];
     addPedidos: (pedidos: Pedido[]) => void;
     missoes: Missao[];
@@ -226,6 +227,44 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const getEtiquetaById = (id: string) => etiquetas.find(e => e.id === id);
     const updateEtiqueta = (updatedEtiqueta: Etiqueta) => setEtiquetas(etiquetas.map(e => e.id === updatedEtiqueta.id ? updatedEtiqueta : e));
     
+    const addEtiqueta = (etiquetaData: Partial<Etiqueta>): Etiqueta => {
+        const nfPart = 'INV';
+        const lastEtiquetaNum = etiquetas.reduce((max, e) => {
+            const parts = e.id.split('-');
+            if (parts.length > 1) {
+                const num = parseInt(parts[parts.length - 1], 10);
+                return isNaN(num) ? max : Math.max(max, num);
+            }
+            return max;
+        }, 0);
+        const newId = `P${nfPart}-${(lastEtiquetaNum + 1).toString().padStart(5, '0')}`;
+
+        const newEtiqueta: Etiqueta = {
+            id: newId,
+            recebimentoId: 'INVENTORY_ADJUSTMENT',
+            status: EtiquetaStatus.ARMAZENADA,
+            skuId: undefined,
+            quantidadeCaixas: undefined,
+            lote: undefined,
+            validade: undefined,
+            observacoes: undefined,
+            enderecoId: undefined,
+            dataApontamento: undefined,
+            dataArmazenagem: undefined,
+            dataExpedicao: undefined,
+            palletConsolidadoId: undefined,
+            ...etiquetaData,
+        };
+        
+        setEtiquetas(prev => [...prev, newEtiqueta]);
+        
+        if (newEtiqueta.enderecoId) {
+            setEnderecos(prev => prev.map(e => e.id === newEtiqueta.enderecoId ? { ...e, status: EnderecoStatus.OCUPADO } : e));
+        }
+
+        return newEtiqueta;
+    };
+
     const deleteEtiqueta = (id: string): { success: boolean; message?: string } => {
         const etiqueta = etiquetas.find((e) => e.id === id);
         if (!etiqueta) {
@@ -267,13 +306,24 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     };
 
-    const armazenarEtiqueta = (id: string, enderecoId: string) => {
+    const armazenarEtiqueta = (id: string, enderecoId: string): { success: boolean; message?: string } => {
         const etiqueta = getEtiquetaById(id);
         const enderecoDestino = enderecos.find(e => e.id === enderecoId);
 
-        if (!etiqueta || !enderecoDestino || enderecoDestino.status !== EnderecoStatus.LIVRE) {
-            console.error("Armazenagem inválida: Etiqueta ou endereço não encontrado, ou endereço não está livre.", { etiqueta, enderecoDestino });
-            return;
+        if (!etiqueta) {
+            const message = "Armazenagem inválida: Etiqueta não encontrada.";
+            console.error(message, { id });
+            return { success: false, message };
+        }
+        if (!enderecoDestino) {
+            const message = "Armazenagem inválida: Endereço de destino não encontrado.";
+            console.error(message, { enderecoId });
+            return { success: false, message };
+        }
+         if (enderecoDestino.status !== EnderecoStatus.LIVRE) {
+            const message = `Armazenagem inválida: Endereço ${enderecoDestino.nome} não está livre. Status: ${enderecoDestino.status}.`;
+            console.error(message, { enderecoDestino });
+            return { success: false, message };
         }
 
         setEnderecos(prevEnderecos => {
@@ -299,6 +349,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             status: EtiquetaStatus.ARMAZENADA,
             dataArmazenagem: new Date().toISOString()
         });
+
+        return { success: true };
     };
     
     // Pedido Management
@@ -496,7 +548,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco,
         industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
         recebimentos, addRecebimento, updateRecebimento,
-        etiquetas, getEtiquetaById, updateEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
+        etiquetas, getEtiquetaById, updateEtiqueta, addEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
         pedidos, addPedidos,
         missoes, createPickingMissions,
         palletsConsolidados, addPalletConsolidado,
