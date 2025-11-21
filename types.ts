@@ -159,3 +159,24 @@ export interface Divergencia {
     quantidade: number;
     observacao?: string;
 }
+
+// User Management Types
+export enum UserRole {
+    ADMIN = 'Admin',
+    OPERADOR = 'Operador',
+    CONFERENTE = 'Conferente',
+    EXPEDICAO = 'Expedição'
+}
+
+export enum UserStatus {
+    ATIVO = 'Ativo',
+    INATIVO = 'Inativo'
+}
+
+export interface User {
+    id: string;
+    username: string;
+    fullName: string;
+    role: UserRole;
+    status: UserStatus;
+}

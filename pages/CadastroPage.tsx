@@ -1,37 +1,41 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserRole, UserStatus } from '../types';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
+import UserModal from '../components/UserModal';
 
 declare const XLSX: any;
 
 const CadastroPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('enderecos');
 
-    const TabButton: React.FC<{ tabName: string; label: string }> = ({ tabName, label }) => (
+    const TabButton: React.FC<{ tabName: string; label: string; icon: React.ElementType }> = ({ tabName, label, icon: Icon }) => (
         <button
             onClick={() => setActiveTab(tabName)}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
         >
+            <Icon className="h-5 w-5 mr-2" />
             {label}
         </button>
     );
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900">Cadastros</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Cadastros Gerais</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
-                <div className="flex space-x-2 border-b border-gray-200 mb-4">
-                    <TabButton tabName="enderecos" label="Endereços" />
-                    <TabButton tabName="skus" label="SKUs" />
-                    <TabButton tabName="industrias" label="Indústrias" />
+                <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
+                    <TabButton tabName="enderecos" label="Endereços" icon={TrashIcon} />
+                    <TabButton tabName="skus" label="SKUs" icon={TrashIcon} />
+                    <TabButton tabName="industrias" label="Indústrias" icon={TrashIcon} />
+                    <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
                 </div>
                 <div>
                     {activeTab === 'enderecos' && <CadastroEnderecos />}
                     {activeTab === 'skus' && <CadastroSKUs />}
                     {activeTab === 'industrias' && <CadastroIndustrias />}
+                    {activeTab === 'usuarios' && <CadastroUsuarios />}
                 </div>
             </div>
         </div>
@@ -524,5 +528,91 @@ const IndustriaModal: React.FC<{ industria: Partial<Industria> | null, onSave: (
     )
 }
 
+
+// CadastroUsuarios Component
+const CadastroUsuarios: React.FC = () => {
+    const { users, addUser, updateUser, deleteUser } = useWMS();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentUser, setCurrentUser] = useState<Partial<User> | null>(null);
+    const [error, setError] = useState('');
+    
+    const openModal = (user: Partial<User> | null = null) => {
+        setCurrentUser(user || {});
+        setIsModalOpen(true);
+        setError('');
+    };
+
+    const closeModal = () => {
+        setCurrentUser(null);
+        setIsModalOpen(false);
+    };
+
+    const handleSave = (formData: Omit<User, 'id'>) => {
+        let result: { success: boolean, message?: string };
+        if (currentUser && 'id' in currentUser) {
+            result = updateUser({ ...currentUser, ...formData } as User);
+        } else {
+            result = addUser(formData);
+        }
+        
+        if (result.success) {
+            closeModal();
+        } else {
+            setError(result.message || 'Ocorreu um erro desconhecido.');
+        }
+    };
+    
+    const handleDelete = (user: User) => {
+        if(window.confirm(`Tem certeza que deseja excluir o usuário "${user.username}"?`)) {
+            const result = deleteUser(user.id);
+            if (!result.success) {
+                alert(result.message);
+            }
+        }
+    };
+    
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Gerenciar Usuários</h2>
+                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                    <PlusIcon className="h-5 w-5 mr-2" /> Novo Usuário
+                </button>
+            </div>
+             <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome de Usuário</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome Completo</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Perfil</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                        </tr>
+                    </thead>
+                     <tbody className="bg-white divide-y divide-gray-200">
+                        {users.map(u => (
+                            <tr key={u.id}>
+                                <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{u.username}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{u.role}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.status === UserStatus.ATIVO ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                        {u.status}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button onClick={() => openModal(u)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                    <button onClick={() => handleDelete(u)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+             {isModalOpen && <UserModal user={currentUser} onSave={handleSave} onClose={closeModal} serverError={error} />}
+        </div>
+    )
+}
 
 export default CadastroPage;

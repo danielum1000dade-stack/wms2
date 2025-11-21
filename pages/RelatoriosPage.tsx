@@ -2,8 +2,8 @@
 import React, { useState, useMemo } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { PrinterIcon } from '@heroicons/react/24/outline';
-import { Recebimento } from '../types';
 import RomaneioDescarga from '../components/RomaneioDescarga';
+import { Recebimento } from '../types';
 
 const RelatoriosPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('entradas');
@@ -21,7 +21,7 @@ const RelatoriosPage: React.FC = () => {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
-                <div className="flex space-x-2 border-b border-gray-200 mb-4">
+                <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2">
                     <TabButton tabName="entradas" label="Relatório de Entradas" />
                     <TabButton tabName="romaneio" label="Romaneio de Descarga" />
                 </div>
@@ -160,6 +160,7 @@ const RelatorioEntradas: React.FC = () => {
     );
 };
 
+
 const RelatorioRomaneio: React.FC = () => {
     const { recebimentos } = useWMS();
     const [selectedRecebimentoId, setSelectedRecebimentoId] = useState<string>('');
@@ -200,7 +201,7 @@ const RelatorioRomaneio: React.FC = () => {
             )}
         </div>
     );
-}
+};
 
 
 export default RelatoriosPage;

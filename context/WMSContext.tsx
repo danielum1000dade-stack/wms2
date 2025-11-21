@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext } from 'react';
 import useLocalStorage from '../hooks/useLocalStorage';
-import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo, EnderecoStatus } from '../types';
+import { SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, DivergenciaTipo, EnderecoStatus, User, UserRole, UserStatus } from '../types';
 
 interface WMSContextType {
     skus: SKU[];
@@ -41,6 +41,10 @@ interface WMSContextType {
     getDivergenciasByRecebimento: (recebimentoId: string) => Divergencia[];
     addDivergencia: (divergencia: Omit<Divergencia, 'id'>) => void;
     deleteDivergencia: (id: string) => void;
+    users: User[];
+    addUser: (user: Omit<User, 'id'>) => { success: boolean, message?: string };
+    updateUser: (user: User) => { success: boolean, message?: string };
+    deleteUser: (id: string) => { success: boolean, message?: string };
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -55,6 +59,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [palletsConsolidados, setPalletsConsolidados] = useLocalStorage<PalletConsolidado[]>('wms_pallets_consolidados', []);
     const [industrias, setIndustrias] = useLocalStorage<Industria[]>('wms_industrias', []);
     const [divergencias, setDivergencias] = useLocalStorage<Divergencia[]>('wms_divergencias', []);
+    const [users, setUsers] = useLocalStorage<User[]>('wms_users', [
+        { id: 'admin_user', username: 'admin', fullName: 'Administrador', role: UserRole.ADMIN, status: UserStatus.ATIVO }
+    ]);
 
     const generateId = () => new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
 
@@ -295,6 +302,42 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setDivergencias(prev => prev.filter(d => d.id !== id));
     };
 
+     // User Management
+    const addUser = (userData: Omit<User, 'id'>) => {
+        const existingUser = users.find(u => u.username.toLowerCase() === userData.username.toLowerCase());
+        if (existingUser) {
+            return { success: false, message: 'Este nome de usuário já existe.' };
+        }
+        const newUser = { ...userData, id: generateId() };
+        setUsers(prev => [...prev, newUser]);
+        return { success: true };
+    };
+
+    const updateUser = (updatedUser: User) => {
+        const existingUser = users.find(u => u.username.toLowerCase() === updatedUser.username.toLowerCase() && u.id !== updatedUser.id);
+        if (existingUser) {
+            return { success: false, message: 'Este nome de usuário já existe.' };
+        }
+        setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+        return { success: true };
+    };
+
+    const deleteUser = (id: string) => {
+        const userToDelete = users.find(u => u.id === id);
+        if (!userToDelete) {
+            return { success: false, message: 'Usuário não encontrado.' };
+        }
+        
+        const activeAdmins = users.filter(u => u.role === UserRole.ADMIN && u.status === UserStatus.ATIVO);
+        if (userToDelete.role === UserRole.ADMIN && activeAdmins.length <= 1) {
+            return { success: false, message: 'Não é possível excluir o último administrador ativo do sistema.' };
+        }
+
+        setUsers(prev => prev.filter(u => u.id !== id));
+        return { success: true };
+    };
+
+
     const value = {
         skus, addSku, addSkusBatch, updateSku, deleteSku,
         enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco,
@@ -304,7 +347,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pedidos, addPedidos,
         missoes, createPickingMissions,
         palletsConsolidados, addPalletConsolidado,
-        divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia
+        divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
+        users, addUser, updateUser, deleteUser
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

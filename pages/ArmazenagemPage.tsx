@@ -152,6 +152,16 @@ const ArmazenagemPage: React.FC = () => {
         setIsAddressScanning(false);
     };
 
+    const handleManualConfirm = () => {
+        if (!finalEndereco || !selectedEtiqueta) return;
+
+        if (window.confirm(`Tem certeza que deseja confirmar a armazenagem em ${finalEndereco.nome} manualmente, sem escanear o endereço?\n\nUse esta opção apenas se a leitura do código não for possível.`)) {
+            armazenarEtiqueta(selectedEtiqueta.id, finalEndereco.id);
+            setFeedback({ type: 'success', message: `Pallet ${selectedEtiqueta.id} armazenado em ${finalEndereco.nome} com sucesso!`});
+            setTimeout(resetState, 2000);
+        }
+    };
+
     const PalletCard: React.FC<{ etiqueta: Etiqueta }> = ({ etiqueta }) => {
         const sku = skus.find(s => s.id === etiqueta.skuId);
         return (
@@ -179,13 +189,22 @@ const ArmazenagemPage: React.FC = () => {
                     <h3 className="text-lg font-semibold">3. Confirmar Movimentação</h3>
                     <p>Movendo pallet <span className="font-mono">{selectedEtiqueta.id}</span> para o endereço:</p>
                     <p className="text-2xl font-bold text-indigo-600 bg-indigo-50 py-2 px-4 rounded-md">{finalEndereco.nome}</p>
-                    <button
-                        onClick={() => setIsAddressScanning(!isAddressScanning)}
-                        className={`w-full flex items-center justify-center px-4 py-3 text-white font-semibold rounded-lg shadow-md transition-colors ${isAddressScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                    >
-                        {isAddressScanning ? <XCircleIcon className="h-6 w-6 mr-2"/> : <CameraIcon className="h-6 w-6 mr-2"/>}
-                        {isAddressScanning ? 'Cancelar Leitura' : 'Escanear Endereço para Confirmar'}
-                    </button>
+                    <div className="space-y-2">
+                        <button
+                            onClick={() => setIsAddressScanning(!isAddressScanning)}
+                            className={`w-full flex items-center justify-center px-4 py-3 text-white font-semibold rounded-lg shadow-md transition-colors ${isAddressScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                        >
+                            {isAddressScanning ? <XCircleIcon className="h-6 w-6 mr-2"/> : <CameraIcon className="h-6 w-6 mr-2"/>}
+                            {isAddressScanning ? 'Cancelar Leitura' : 'Escanear Endereço para Confirmar'}
+                        </button>
+                        <button
+                            onClick={handleManualConfirm}
+                            className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                        >
+                            <CheckCircleIcon className="h-5 w-5 mr-2 text-gray-600" />
+                            Confirmar Manualmente
+                        </button>
+                    </div>
                     {isAddressScanning && <div id="address-reader" className="w-full mx-auto mt-4 border rounded-lg"></div>}
                 </div>
             );
