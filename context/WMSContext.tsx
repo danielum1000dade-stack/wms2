@@ -88,6 +88,8 @@ interface WMSContextType {
     createMission: (missionData: Omit<Missao, 'id' | 'status' | 'createdAt'>) => Missao;
     deleteMission: (missionId: string) => { success: boolean; message?: string };
     assignNextMission: (operadorId: string) => Missao | null;
+    assignFamilyMissionsToOperator: (pedidoId: string, familia: string, operadorId: string) => { success: boolean; missions?: Missao[]; message?: string };
+    getMyActivePickingGroup: (operadorId: string) => Missao[] | null;
     updateMissionStatus: (missionId: string, status: Missao['status']) => void;
     palletsConsolidados: PalletConsolidado[];
     addPalletConsolidado: (pallet: Omit<PalletConsolidado, 'id'>) => PalletConsolidado;
@@ -377,7 +379,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
      const processTransportData = (transportData: any[]): { success: boolean; message: string; } => {
         const groupedByTransporte = transportData.reduce((acc, row) => {
-            const transporteNum = row['Nº transporte'];
+            const transporteNum = String(row['Nº transporte']);
             if (!acc[transporteNum]) {
                 acc[transporteNum] = [];
             }
@@ -423,81 +425,81 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const generateMissionsForPedido = (pedidoId: string): { success: boolean; message: string; } => {
         const pedido = pedidos.find(p => p.id === pedidoId);
         if (!pedido) return { success: false, message: "Pedido não encontrado." };
+        if (pedido.status !== 'Pendente') return { success: false, message: `O pedido ${pedido.numeroTransporte} já está ${pedido.status}.` };
 
         const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.ANTECAMARA);
-        if (!antechamber) return { success: false, message: "Nenhum endereço do tipo 'Antecâmara' encontrado para ser o destino." };
+        if (!antechamber) return { success: false, message: "Nenhum endereço do tipo 'Antecâmara' encontrado para ser o destino das missões." };
 
         let newMissions: Missao[] = [];
         let missionEtiquetas = new Set<string>();
+        let errors: string[] = [];
 
         for (const item of pedido.items) {
             const sku = skus.find(s => s.sku === item.sku);
             if (!sku) {
-                console.warn(`SKU ${item.sku} não encontrado para o pedido ${pedido.id}`);
+                errors.push(`SKU ${item.sku} do pedido não encontrado no cadastro.`);
+                continue;
+            }
+            if (sku.status === SKUStatus.BLOQUEADO) {
+                errors.push(`SKU ${item.sku} está bloqueado e não pode ser separado.`);
                 continue;
             }
 
             let quantidadePendente = item.quantidadeCaixas;
-            const caixasPorPallet = sku.totalCaixas;
 
-            // 1. Processar pallets fechados
-            if (caixasPorPallet > 0 && quantidadePendente >= caixasPorPallet) {
-                const numPalletsFechados = Math.floor(quantidadePendente / caixasPorPallet);
-                const palletsDisponiveis = etiquetas.filter(e =>
-                    e.skuId === sku.id &&
-                    e.status === EtiquetaStatus.ARMAZENADA &&
-                    e.quantidadeCaixas === caixasPorPallet &&
-                    !missionEtiquetas.has(e.id)
-                ).slice(0, numPalletsFechados);
+            // Find all available stock for this specific SKU and Lote, oldest first (FIFO)
+            const etiquetasDisponiveis = etiquetas.filter(e =>
+                e.skuId === sku.id &&
+                e.lote === item.lote &&
+                e.status === EtiquetaStatus.ARMAZENADA &&
+                !e.isBlocked
+            ).sort((a, b) => {
+                const dateA = a.validade ? new Date(a.validade).getTime() : 0;
+                const dateB = b.validade ? new Date(b.validade).getTime() : 0;
+                return dateA - dateB; // Sort by earliest expiry date (FIFO)
+            });
 
-                for (const pallet of palletsDisponiveis) {
-                    if (pallet.enderecoId) {
-                         newMissions.push({
-                            id: generateId(),
-                            tipo: MissaoTipo.MOVIMENTACAO_PALLET,
-                            pedidoId: pedido.id,
-                            etiquetaId: pallet.id,
-                            skuId: sku.id,
-                            quantidade: pallet.quantidadeCaixas || 0,
-                            origemId: pallet.enderecoId,
-                            destinoId: antechamber.id,
-                            status: 'Pendente',
-                            createdAt: new Date().toISOString(),
-                        });
-                        missionEtiquetas.add(pallet.id);
-                    }
-                }
-                quantidadePendente -= palletsDisponiveis.length * caixasPorPallet;
+            if (etiquetasDisponiveis.length === 0) {
+                errors.push(`Sem estoque disponível para o SKU ${item.sku}, Lote ${item.lote}.`);
+                continue;
             }
 
-            // 2. Processar picking para o restante
-            if (quantidadePendente > 0) {
-                 const etiquetasPicking = etiquetas.filter(e => 
-                    e.skuId === sku.id && 
-                    e.status === EtiquetaStatus.ARMAZENADA &&
-                    !missionEtiquetas.has(e.id)
-                ).sort((a,b) => (a.quantidadeCaixas ?? 0) - (b.quantidadeCaixas ?? 0));
-                
-                 for(const etiqueta of etiquetasPicking) {
-                    if(quantidadePendente <= 0) break;
-                    const quantidadeRetirar = Math.min(quantidadePendente, etiqueta.quantidadeCaixas ?? 0);
-                    if (quantidadeRetirar > 0 && etiqueta.enderecoId) {
-                        newMissions.push({
-                            id: generateId(),
-                            tipo: MissaoTipo.PICKING,
-                            pedidoId: pedido.id,
-                            etiquetaId: etiqueta.id,
-                            skuId: sku.id,
-                            quantidade: quantidadeRetirar,
-                            origemId: etiqueta.enderecoId,
-                            destinoId: antechamber.id,
-                            status: 'Pendente',
-                            createdAt: new Date().toISOString(),
-                        });
-                        missionEtiquetas.add(etiqueta.id);
-                        quantidadePendente -= quantidadeRetirar;
-                    }
+            // Iterate through available stock to fulfill the required quantity
+            for (const etiqueta of etiquetasDisponiveis) {
+                if (quantidadePendente <= 0) break;
+                if (!etiqueta.enderecoId) continue; // Skip pallets without a location
+
+                const enderecoOrigem = enderecos.find(end => end.id === etiqueta.enderecoId);
+                if (!enderecoOrigem || enderecoOrigem.status === EnderecoStatus.BLOQUEADO) {
+                    continue; // Skip if address is blocked
                 }
+
+                const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
+                const quantidadeRetirar = Math.min(quantidadePendente, quantidadeNoPallet);
+                
+                if (quantidadeRetirar > 0) {
+                    const isFullPalletMove = (quantidadeRetirar === quantidadeNoPallet) && (quantidadeNoPallet === sku.totalCaixas);
+                    
+                    newMissions.push({
+                        id: generateId(),
+                        tipo: isFullPalletMove ? MissaoTipo.MOVIMENTACAO_PALLET : MissaoTipo.PICKING,
+                        pedidoId: pedido.id,
+                        etiquetaId: etiqueta.id,
+                        skuId: sku.id,
+                        quantidade: quantidadeRetirar,
+                        origemId: etiqueta.enderecoId,
+                        destinoId: antechamber.id,
+                        status: 'Pendente',
+                        createdAt: new Date().toISOString(),
+                    });
+                    
+                    missionEtiquetas.add(etiqueta.id);
+                    quantidadePendente -= quantidadeRetirar;
+                }
+            }
+
+            if (quantidadePendente > 0) {
+                errors.push(`Estoque insuficiente para SKU ${item.sku}, Lote ${item.lote}. Faltam ${quantidadePendente} caixas.`);
             }
         }
         
@@ -505,7 +507,16 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setMissoes(prev => [...prev, ...newMissions]);
             setEtiquetas(prev => prev.map(e => missionEtiquetas.has(e.id) ? { ...e, status: EtiquetaStatus.EM_SEPARACAO } : e));
             setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, status: 'Em Separação' } : p));
-             return { success: true, message: `${newMissions.length} missões geradas.` };
+            
+            let successMessage = `${newMissions.length} missões geradas.`;
+            if (errors.length > 0) {
+                successMessage += `\n\nAvisos:\n- ${errors.join('\n- ')}`;
+            }
+            return { success: true, message: successMessage };
+        }
+
+        if (errors.length > 0) {
+            return { success: false, message: `Falha ao gerar missões:\n- ${errors.join('\n- ')}` };
         }
 
         return { success: false, message: "Nenhuma missão necessária ou estoque indisponível." };
@@ -683,6 +694,48 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return updatedMission;
     };
 
+    const assignFamilyMissionsToOperator = (pedidoId: string, familia: string, operadorId: string): { success: boolean; missions?: Missao[]; message?: string } => {
+        const skusInFamily = skus.filter(s => s.familia === familia).map(s => s.id);
+
+        const missionsToAssign = missoes.filter(m =>
+            m.pedidoId === pedidoId &&
+            m.status === 'Pendente' &&
+            m.tipo === MissaoTipo.PICKING &&
+            skusInFamily.includes(m.skuId)
+        );
+
+        if (missionsToAssign.length === 0) {
+            return { success: false, message: 'Nenhuma missão pendente encontrada para esta família.' };
+        }
+        
+        // Concurrency check
+        const alreadyAssigned = missoes.some(m => m.operadorId && missionsToAssign.map(ma => ma.id).includes(m.id));
+        if (alreadyAssigned) {
+            return { success: false, message: 'Missões para esta família já foram atribuídas a outro operador.' };
+        }
+
+        const assignedMissionIds = new Set(missionsToAssign.map(m => m.id));
+        const updatedMissions = missionsToAssign.map(m => ({ ...m, status: 'Atribuída' as const, operadorId }));
+
+        setMissoes(prev =>
+            prev.map(m => {
+                const updated = updatedMissions.find(um => um.id === m.id);
+                return updated || m;
+            })
+        );
+        
+        return { success: true, missions: updatedMissions };
+    };
+
+    const getMyActivePickingGroup = (operadorId: string): Missao[] | null => {
+        const activeMissions = missoes.filter(m =>
+            m.operadorId === operadorId &&
+            (m.status === 'Atribuída' || m.status === 'Em Andamento') &&
+            m.tipo === MissaoTipo.PICKING
+        );
+        return activeMissions.length > 0 ? activeMissions : null;
+    };
+
 
     // Pallet Consolidado Management
     const addPalletConsolidado = (pallet: Omit<PalletConsolidado, 'id'>) => {
@@ -837,7 +890,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, addEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
         pedidos, addPedidos, processTransportData, generateMissionsForPedido,
-        missoes, createPickingMissions, createMission, deleteMission, assignNextMission, updateMissionStatus,
+        missoes, createPickingMissions, createMission, deleteMission, assignNextMission, updateMissionStatus, assignFamilyMissionsToOperator, getMyActivePickingGroup,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,

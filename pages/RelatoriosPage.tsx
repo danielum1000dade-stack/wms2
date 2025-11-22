@@ -262,13 +262,13 @@ const RelatorioInventarioConsolidado: React.FC = () => {
             });
 
             return acc;
-// FIX: Use a type assertion on the initial value of `reduce` to ensure the accumulator `acc` is correctly typed. This resolves cascading 'unknown' type errors in the subsequent `.map()` call.
         }, {} as Record<string, ConsolidatedIndustriaData>);
 
-        return Object.values(consolidated).map(industriaData => {
-            const skusList = Object.values(industriaData.skus);
+        // FIX: Explicitly type the 'industria' parameter to resolve type inference issues with Object.values.
+        return Object.values(consolidated).map((industria: ConsolidatedIndustriaData) => {
+            const skusList = Object.values(industria.skus);
             return ({
-                ...industriaData,
+                ...industria,
                 skus: skusList.sort((a,b) => a.sku.localeCompare(b.sku)),
                 totalCaixas: skusList.reduce((sum, sku) => sum + sku.totalCaixas, 0),
                 totalPallets: skusList.reduce((sum, sku) => sum + sku.pallets.length, 0),

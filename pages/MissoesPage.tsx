@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Missao } from '../types';
+import { Missao, MissaoTipo } from '../types';
 import { CubeIcon, ArrowRightIcon, FlagIcon, TrashIcon, UserCircleIcon, PlayIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 
 const getStatusConfig = (status: Missao['status']) => {
@@ -97,9 +97,11 @@ const MissoesPage: React.FC = () => {
     const currentUserId = 'admin_user'; 
 
     const { myCurrentMission, pendingMissions, otherActiveMissions } = useMemo(() => {
-        const myMission = missoes.find(m => m.operadorId === currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento')) || null;
-        const pending = missoes.filter(m => m.status === 'Pendente');
-        const otherActive = missoes.filter(m => m.operadorId !== currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
+        const nonPickingMissions = missoes.filter(m => m.tipo !== MissaoTipo.PICKING);
+        
+        const myMission = nonPickingMissions.find(m => m.operadorId === currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento')) || null;
+        const pending = nonPickingMissions.filter(m => m.status === 'Pendente');
+        const otherActive = nonPickingMissions.filter(m => m.operadorId !== currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
         
         return {
             myCurrentMission: myMission,
@@ -139,7 +141,7 @@ const MissoesPage: React.FC = () => {
     return (
         <div className="space-y-8">
             <div className="flex flex-wrap justify-between items-center gap-4">
-                <h1 className="text-3xl font-bold text-gray-900">Painel de Missões</h1>
+                <h1 className="text-3xl font-bold text-gray-900">Painel de Missões (Movimentação/Ressuprimento)</h1>
                 <button 
                     onClick={handleAssignNext} 
                     disabled={!!myCurrentMission}
