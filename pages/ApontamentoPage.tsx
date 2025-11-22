@@ -109,7 +109,7 @@ const ApontamentoPage: React.FC = () => {
         if (!skuInput) {
             return;
         }
-        const sku = skus.find(s => s.sku.toLowerCase() === skuInput.toLowerCase());
+        const sku = skus.find(s => String(s.sku).toLowerCase() === skuInput.toLowerCase());
         if (sku) {
             setFoundSku(sku);
             setSkuError('');

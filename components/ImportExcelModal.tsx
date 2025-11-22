@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Modal from './Modal';
 import { ArrowUpTrayIcon, DocumentTextIcon, XCircleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
@@ -44,7 +43,8 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ title, columnConfig
                 const workbook = XLSX.read(binaryStr, { type: 'binary' });
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+                // Use cellDates: true to parse Excel dates into JS Date objects
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { cellDates: true });
 
                 if (jsonData.length === 0) {
                     setError('O arquivo está vazio ou em um formato inválido.');
@@ -53,47 +53,57 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ title, columnConfig
 
                 const headers = Object.keys(jsonData[0] as object);
                 const requiredHeaders = Object.keys(columnConfig).filter(key => columnConfig[key].required);
-                
+
                 const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
                 if (missingHeaders.length > 0) {
                     setError(`As seguintes colunas obrigatórias não foram encontradas: ${missingHeaders.join(', ')}`);
                     return;
                 }
                 
+                const validationErrors: string[] = [];
                 const processedData = jsonData.map((row: any, rowIndex) => {
-                    const newRow: { [key: string]: any } = {};
-                    let rowError = '';
+                    const newRow: { [key: string]: any } = { ...row }; // Start with a copy of the row
+                    let hasError = false;
+
                     for (const key in columnConfig) {
                         const config = columnConfig[key];
                         let value = row[key];
 
                         if (config.required && (value === undefined || value === null || value === '')) {
-                            rowError = `Erro na linha ${rowIndex + 2}: a coluna obrigatória "${key}" está vazia.`;
+                            validationErrors.push(`Erro na linha ${rowIndex + 2}: a coluna obrigatória "${key}" está vazia.`);
+                            hasError = true;
+                            continue;
                         }
 
-                        if (value !== undefined && value !== null) {
+                        if (value !== undefined && value !== null && value !== '') {
                             if (config.type === 'number') {
-                                newRow[key] = parseFloat(value);
-                                if (isNaN(newRow[key])) {
-                                    rowError = `Erro na linha ${rowIndex + 2}: o valor "${value}" na coluna "${key}" não é um número válido.`;
+                                const numValue = parseFloat(value);
+                                if (isNaN(numValue)) {
+                                    validationErrors.push(`Erro na linha ${rowIndex + 2}: o valor "${value}" na coluna "${key}" não é um número válido.`);
+                                    hasError = true;
+                                } else {
+                                    newRow[key] = numValue;
                                 }
-                            } else {
-                                newRow[key] = String(value);
                             }
-                             if (config.enum && !config.enum.includes(newRow[key])) {
-                                rowError = `Erro na linha ${rowIndex + 2}: o valor "${newRow[key]}" para a coluna "${key}" é inválido. Valores aceitos: ${config.enum.join(', ')}.`;
+                            
+                            if (config.enum && !config.enum.includes(String(value))) {
+                                validationErrors.push(`Erro na linha ${rowIndex + 2}: o valor "${value}" para a coluna "${key}" é inválido. Valores aceitos: ${config.enum.join(', ')}.`);
+                                hasError = true;
                             }
-                        } else if (config.required) {
-                             newRow[key] = config.type === 'number' ? 0 : '';
                         }
                     }
-                     if (rowError) {
-                        throw new Error(rowError);
-                    }
-                    return newRow;
-                });
+                    
+                    return hasError ? null : newRow;
+                }).filter(Boolean); // Filter out rows with errors (which are now null)
 
-                setData(processedData);
+                if (validationErrors.length > 0) {
+                    setError(`Foram encontrados ${validationErrors.length} erros no arquivo:\n- ${validationErrors.join('\n- ')}`);
+                    setData([]); // Clear data preview on error
+                    return;
+                }
+                
+                setData(processedData as any[]);
+
             } catch (err: any) {
                 setError(err.message || 'Ocorreu um erro ao processar o arquivo. Verifique o formato e o conteúdo.');
                 setData([]);
@@ -153,7 +163,7 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ title, columnConfig
                 {error && (
                      <div className="p-3 bg-red-100 border border-red-300 rounded-md flex items-start">
                         <XCircleIcon className="h-5 w-5 text-red-600 mr-2 flex-shrink-0" />
-                        <p className="text-sm text-red-800">{error}</p>
+                        <p className="text-sm text-red-800 whitespace-pre-wrap">{error}</p>
                     </div>
                 )}
                 
@@ -176,8 +186,10 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ title, columnConfig
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {data.slice(0, 5).map((row, index) => (
                                         <tr key={index}>
-                                            {Object.values(row).map((value: any, i) => (
-                                                <td key={i} className="px-3 py-2 whitespace-nowrap">{value}</td>
+                                            {Object.keys(row).map((key, i) => (
+                                                <td key={i} className="px-3 py-2 whitespace-nowrap">
+                                                    {row[key] instanceof Date ? row[key].toLocaleDateString() : String(row[key])}
+                                                </td>
                                             ))}
                                         </tr>
                                     ))}

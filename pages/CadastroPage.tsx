@@ -815,7 +815,7 @@ const ImportarEstoqueInicial: React.FC = () => {
 
         for (let i = 0; i < data.length; i++) {
             const row = data[i];
-            const endereco = enderecos.find(e => e.codigo.toLowerCase() === row.endereco.toLowerCase());
+            const endereco = enderecos.find(e => e.codigo.toLowerCase() === String(row.endereco).toLowerCase());
             if (!endereco) {
                 errors.push(`Linha ${i + 2}: Endereço "${row.endereco}" não encontrado.`);
                 continue;
@@ -825,26 +825,48 @@ const ImportarEstoqueInicial: React.FC = () => {
                 continue;
             }
 
-            const sku = skus.find(s => s.sku.toLowerCase() === row.sku.toLowerCase());
+            const sku = skus.find(s => String(s.sku).toLowerCase() === String(row.sku).toLowerCase());
             if (!sku) {
                 errors.push(`Linha ${i + 2}: SKU "${row.sku}" não encontrado.`);
                 continue;
             }
 
-            // Date validation
-            const validadeDate = new Date(row.validade);
-            if (isNaN(validadeDate.getTime())) {
-                errors.push(`Linha ${i + 2}: Data de validade "${row.validade}" inválida. Use o formato AAAA-MM-DD.`);
+            // Date validation and parsing
+            const rawDate = row.validade;
+            let validadeDate: Date | null = null;
+
+            if (rawDate instanceof Date) {
+                validadeDate = rawDate;
+            } else if (typeof rawDate === 'string') {
+                // Try to parse YYYY-MM-DD string as UTC to avoid timezone shifts
+                const dateParts = rawDate.split('T')[0].split(/[-/]/);
+                if (dateParts.length === 3) {
+                    // Note: JS month is 0-indexed
+                    const parsed = new Date(Date.UTC(Number(dateParts[0]), Number(dateParts[1]) - 1, Number(dateParts[2])));
+                    if (!isNaN(parsed.getTime())) {
+                        validadeDate = parsed;
+                    }
+                }
+            }
+
+            if (!validadeDate || isNaN(validadeDate.getTime())) {
+                errors.push(`Linha ${i + 2}: Data de validade "${row.validade}" é inválida. Use o formato AAAA-MM-DD.`);
                 continue;
             }
+            
+            // Format date to YYYY-MM-DD string, avoiding timezone issues by using UTC methods
+            const year = validadeDate.getUTCFullYear();
+            const month = String(validadeDate.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(validadeDate.getUTCDate()).padStart(2, '0');
+            const formattedDate = `${year}-${month}-${day}`;
             
             addEtiqueta({
                 enderecoId: endereco.id,
                 skuId: sku.id,
-                lote: row.lote,
-                validade: row.validade,
+                lote: String(row.lote),
+                validade: formattedDate,
                 quantidadeCaixas: Number(row.quantidadeCaixas),
-                observacoes: row.observacoes || '',
+                observacoes: row.observacoes ? String(row.observacoes) : '',
                 status: EtiquetaStatus.ARMAZENADA,
                 dataApontamento: new Date().toISOString(),
                 dataArmazenagem: new Date().toISOString(),
@@ -854,7 +876,7 @@ const ImportarEstoqueInicial: React.FC = () => {
 
         let message = `${successes} itens de estoque importados com sucesso!`;
         if (errors.length > 0) {
-            message += `\n\nFalha em ${errors.length} itens:\n${errors.join('\n')}`;
+            message += `\n\nFalha em ${errors.length} itens:\n- ${errors.join('\n- ')}`;
         }
         alert(message);
     };

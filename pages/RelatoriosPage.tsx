@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useMemo } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { ArchiveBoxIcon, PrinterIcon, TableCellsIcon } from '@heroicons/react/24/outline';
@@ -264,8 +262,7 @@ const RelatorioInventarioConsolidado: React.FC = () => {
             });
 
             return acc;
-// FIX: Use a type assertion on the initial value of `reduce` to ensure the accumulator `acc` is correctly typed.
-// This resolves cascading 'unknown' type errors in the subsequent `.map()` call.
+// FIX: Use a type assertion on the initial value of `reduce` to ensure the accumulator `acc` is correctly typed. This resolves cascading 'unknown' type errors in the subsequent `.map()` call.
         }, {} as Record<string, ConsolidatedIndustriaData>);
 
         return Object.values(consolidated).map(industriaData => {

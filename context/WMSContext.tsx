@@ -377,7 +377,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
      const processTransportData = (transportData: any[]): { success: boolean; message: string; } => {
         const groupedByTransporte = transportData.reduce((acc, row) => {
-            const transporteNum = row['Nº Transporte'];
+            const transporteNum = row['Nº transporte'];
             if (!acc[transporteNum]) {
                 acc[transporteNum] = [];
             }
@@ -392,18 +392,18 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             const items: PedidoItem[] = [];
             for (const row of groupedByTransporte[numeroTransporte]) {
-                const sku = skus.find(s => s.sku === row['Cód. Item']);
+                const sku = skus.find(s => String(s.sku) === String(row['Cód.Item']));
                 if (!sku) {
-                    return { success: false, message: `SKU ${row['Cód. Item']} não encontrado no cadastro.` };
+                    return { success: false, message: `SKU ${row['Cód.Item']} não encontrado no cadastro.` };
                 }
                 items.push({
                     sku: sku.sku,
                     descricao: row['Descrição do Produto'],
-                    lote: row['Lote'],
-                    quantidadeCaixas: row['Unid. Exp. (Caixa)'],
-                    unidadeArmazem: row['Unidade de Armazém'],
-                    totalUnidVda: row['Total (Unid. Vda.)'],
-                    unidExpFracao: row['Unid. Exp. (Fração)'],
+                    lote: String(row['Lote']),
+                    quantidadeCaixas: row['Unid.Exp.(Caixa)'],
+                    unidadeArmazem: row['Unid.Armaz.'],
+                    totalUnidVda: row['Total(Unid.Vda.)'],
+                    unidExpFracao: row['Unid.Exp.(Fração)'],
                     pesoBruto: row['Peso Bruto'],
                     pesoLiquido: row['Peso Líquido'],
                 });

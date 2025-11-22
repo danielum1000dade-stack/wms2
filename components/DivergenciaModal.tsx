@@ -48,7 +48,7 @@ const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClos
 
     const handleSkuBlur = () => {
         if (!skuInput) return;
-        const sku = skus.find(s => s.sku.toLowerCase() === skuInput.toLowerCase());
+        const sku = skus.find(s => String(s.sku).toLowerCase() === skuInput.toLowerCase());
         if (sku) {
             setFoundSku(sku);
             setSkuError('');

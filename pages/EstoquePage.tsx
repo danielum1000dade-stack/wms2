@@ -71,7 +71,7 @@ const ConsultaEstoque: React.FC = () => {
 
                 if (!filters.sku && !filters.lote && !filters.endereco && filters.industriaId === 'todos') return false;
 
-                if (filters.sku && (!sku || !sku.sku.toLowerCase().includes(filters.sku.toLowerCase()))) return false;
+                if (filters.sku && (!sku || !String(sku.sku).toLowerCase().includes(filters.sku.toLowerCase()))) return false;
                 if (filters.lote && (!etiqueta.lote || !etiqueta.lote.toLowerCase().includes(filters.lote.toLowerCase()))) return false;
                 if (filters.endereco && (!endereco || !endereco.nome.toLowerCase().includes(filters.endereco.toLowerCase()))) return false;
                 if (filters.industriaId !== 'todos' && (!sku || sku.industriaId !== filters.industriaId)) return false;

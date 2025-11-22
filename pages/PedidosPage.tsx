@@ -22,14 +22,14 @@ const PedidosPage: React.FC = () => {
     }
 
     const columnConfig = {
-        'Nº Transporte': { type: 'string', required: true },
-        'Cód. Item': { type: 'string', required: true },
+        'Nº transporte': { type: 'string', required: true },
+        'Cód.Item': { type: 'string', required: true },
         'Descrição do Produto': { type: 'string', required: true },
         'Lote': { type: 'string', required: true },
-        'Unidade de Armazém': { type: 'string', required: false },
-        'Total (Unid. Vda.)': { type: 'number', required: false },
-        'Unid. Exp. (Caixa)': { type: 'number', required: true },
-        'Unid. Exp. (Fração)': { type: 'number', required: false },
+        'Unid.Armaz.': { type: 'string', required: false },
+        'Total(Unid.Vda.)': { type: 'number', required: false },
+        'Unid.Exp.(Caixa)': { type: 'number', required: true },
+        'Unid.Exp.(Fração)': { type: 'number', required: false },
         'Peso Bruto': { type: 'number', required: false },
         'Peso Líquido': { type: 'number', required: false },
     };
