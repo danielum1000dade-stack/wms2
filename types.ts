@@ -108,29 +108,38 @@ export interface Etiqueta {
     dataArmazenagem?: string;
     dataExpedicao?: string;
     palletConsolidadoId?: string; // Para etiquetas de expedição
+    isBlocked?: boolean;
+    motivoBloqueio?: string;
 }
 
 export interface PedidoItem {
     sku: string;
     descricao: string;
-    data: string;
     lote: string;
     quantidadeCaixas: number;
+    // Campos do arquivo de transporte
+    unidadeArmazem?: string;
+    totalUnidVda?: number;
+    unidExpFracao?: number;
+    pesoBruto?: number;
+    pesoLiquido?: number;
 }
 
 export interface Pedido {
     id: string;
     numeroTransporte: string;
-    descritivoEntrega: string;
     items: PedidoItem[];
     status: 'Pendente' | 'Em Separação' | 'Separado' | 'Conferido' | 'Expedido';
+    createdAt: string;
 }
 
 export enum MissaoTipo {
     PICKING = 'Picking',
     REABASTECIMENTO = 'Reabastecimento',
     MOVIMENTACAO = 'Movimentação',
+    MOVIMENTACAO_PALLET = 'Movimentação de Pallet',
     TRANSFERENCIA = 'Transferência',
+    CONFERENCIA = 'Conferência',
 }
 
 export interface Missao {
@@ -142,8 +151,9 @@ export interface Missao {
     quantidade: number;
     origemId: string;
     destinoId: string;
-    status: 'Pendente' | 'Em Andamento' | 'Concluída';
-    operador?: string;
+    status: 'Pendente' | 'Atribuída' | 'Em Andamento' | 'Concluída';
+    operadorId?: string;
+    createdAt: string;
 }
 
 export interface PalletConsolidado {

@@ -2,8 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 // FIX: Imported missing types 'InventoryCountSession' and 'InventoryCountItem' to resolve 'Cannot find name' errors throughout the component.
 import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria, InventoryCountSession, InventoryCountItem, SKUStatus } from '../types';
-import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon, TruckIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon, TruckIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import ReplenishmentModal from '../components/ReplenishmentModal';
+import BlockSKUModal from '../components/BlockSKUModal';
+import BlockEtiquetaModal from '../components/BlockEtiquetaModal';
+
+declare const XLSX: any;
 
 const EstoquePage: React.FC = () => {
     const [activeTab, setActiveTab] = useState<'consulta' | 'sessoes'>('consulta');
@@ -36,9 +40,13 @@ const EstoquePage: React.FC = () => {
 };
 
 const ConsultaEstoque: React.FC = () => {
-    const { etiquetas, enderecos, skus, industrias } = useWMS();
+    const { etiquetas, enderecos, skus, industrias, updateSku, updateEtiqueta } = useWMS();
     const [isReplenishmentModalOpen, setIsReplenishmentModalOpen] = useState(false);
+    const [isBlockSkuModalOpen, setIsBlockSkuModalOpen] = useState(false);
+    const [isBlockEtiquetaModalOpen, setIsBlockEtiquetaModalOpen] = useState(false);
     const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
+    const [skuToBlock, setSkuToBlock] = useState<SKU | null>(null);
+    const [etiquetaToBlock, setEtiquetaToBlock] = useState<Etiqueta | null>(null);
     const [feedback, setFeedback] = useState('');
 
     const [filters, setFilters] = useState({
@@ -83,12 +91,67 @@ const ConsultaEstoque: React.FC = () => {
         setSelectedEtiqueta(etiqueta);
         setIsReplenishmentModalOpen(true);
     };
+
+    const openBlockSkuModal = (sku: SKU) => {
+        setSkuToBlock(sku);
+        setIsBlockSkuModalOpen(true);
+    };
+    
+    const openBlockEtiquetaModal = (etiqueta: Etiqueta) => {
+        setEtiquetaToBlock(etiqueta);
+        setIsBlockEtiquetaModalOpen(true);
+    };
+
+    const handleSaveSkuStatus = (sku: SKU) => {
+        updateSku(sku);
+        setFeedback(`Status do SKU ${sku.sku} atualizado para ${sku.status}.`);
+        setTimeout(() => setFeedback(''), 5000);
+        setIsBlockSkuModalOpen(false);
+    };
+    
+    const handleSaveEtiquetaStatus = (etiqueta: Etiqueta) => {
+        updateEtiqueta(etiqueta);
+        const feedbackMsg = etiqueta.isBlocked ? `Pallet ${etiqueta.id} foi bloqueado.` : `Pallet ${etiqueta.id} foi desbloqueado.`;
+        setFeedback(feedbackMsg);
+        setTimeout(() => setFeedback(''), 5000);
+        setIsBlockEtiquetaModalOpen(false);
+    };
     
     const handleMissionCreated = () => {
         setFeedback('Missão de ressuprimento criada com sucesso!');
         setTimeout(() => setFeedback(''), 5000);
         setIsReplenishmentModalOpen(false);
         setSelectedEtiqueta(null);
+    };
+
+    const getShelfLifeStatus = (validadeStr: string | undefined, tempoVida: number | undefined): { text: string; color: string; } => {
+        if (!validadeStr || !tempoVida) {
+            return { text: 'N/A', color: 'bg-gray-100 text-gray-800' };
+        }
+
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const validade = new Date(validadeStr);
+        validade.setMinutes(validade.getMinutes() + validade.getTimezoneOffset());
+        validade.setHours(0, 0, 0, 0);
+
+        const diffTime = validade.getTime() - hoje.getTime();
+        const diasRestantes = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diasRestantes <= 0) {
+            return { text: `Vencido`, color: 'bg-red-600 text-white font-bold' };
+        }
+
+        const criticoThreshold = tempoVida * 0.25;
+        const alertaThreshold = tempoVida * 0.50;
+
+        if (diasRestantes <= criticoThreshold) {
+            return { text: `Crítico (${diasRestantes}d)`, color: 'bg-red-100 text-red-800' };
+        }
+        if (diasRestantes <= alertaThreshold) {
+            return { text: `Alerta (${diasRestantes}d)`, color: 'bg-yellow-100 text-yellow-800' };
+        }
+        return { text: `OK (${diasRestantes}d)`, color: 'bg-green-100 text-green-800' };
     };
 
     return (
@@ -128,35 +191,54 @@ const ConsultaEstoque: React.FC = () => {
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd.</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Lote</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Validade</th>
+                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Shelf Life</th>
                             <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredStock.map(({ etiqueta, endereco, sku }) => (
-                            <tr key={etiqueta.id} className={sku?.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : ''}>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    {sku?.sku}
-                                    {sku?.status === SKUStatus.BLOQUEADO && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">Bloqueado</span>}
-                                </td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{sku?.descritivo}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{endereco?.nome}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.quantidadeCaixas}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.lote}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.validade ? new Date(etiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A'}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <button
-                                        onClick={() => openReplenishmentModal(etiqueta)}
-                                        className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
-                                        title="Criar Missão de Ressuprimento"
-                                    >
-                                        <TruckIcon className="h-4 w-4" /> Ressuprir
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
+                        {filteredStock.map(({ etiqueta, endereco, sku }) => {
+                            const shelfLife = getShelfLifeStatus(etiqueta.validade, sku?.tempoVida);
+                            return (
+                                <tr key={etiqueta.id} className={etiqueta.isBlocked ? 'bg-orange-50' : (sku?.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : '')}>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                        {sku?.sku}
+                                        {sku?.status === SKUStatus.BLOQUEADO && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">SKU Bloqueado</span>}
+                                        {etiqueta.isBlocked && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">Pallet Bloqueado</span>}
+                                    </td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{sku?.descritivo}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{endereco?.nome}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.quantidadeCaixas}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.lote}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.validade ? new Date(etiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A'}</td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${shelfLife.color}`}>
+                                            {shelfLife.text}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <div className="flex justify-end items-center gap-3">
+                                            <button
+                                                onClick={() => openReplenishmentModal(etiqueta)}
+                                                className="text-indigo-600 hover:text-indigo-900 flex items-center gap-1"
+                                                title="Criar Missão de Ressuprimento"
+                                            >
+                                                <TruckIcon className="h-4 w-4" /> <span>Ressuprir</span>
+                                            </button>
+                                             <button
+                                                onClick={() => openBlockEtiquetaModal(etiqueta)}
+                                                className="text-gray-500 hover:text-gray-800"
+                                                title="Bloquear/Desbloquear Pallet"
+                                            >
+                                                <LockClosedIcon className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                         {filteredStock.length === 0 && (
                             <tr>
-                                <td colSpan={7} className="text-center py-10 text-gray-500">
+                                <td colSpan={8} className="text-center py-10 text-gray-500">
                                     Nenhum item encontrado. Use os filtros acima para buscar.
                                 </td>
                             </tr>
@@ -172,10 +254,27 @@ const ConsultaEstoque: React.FC = () => {
                     onMissionCreated={handleMissionCreated}
                 />
             )}
+
+            {isBlockSkuModalOpen && skuToBlock && (
+                <BlockSKUModal 
+                    sku={skuToBlock}
+                    onSave={handleSaveSkuStatus}
+                    onClose={() => setIsBlockSkuModalOpen(false)}
+                />
+            )}
+            
+            {isBlockEtiquetaModalOpen && etiquetaToBlock && (
+                <BlockEtiquetaModal
+                    etiqueta={etiquetaToBlock}
+                    onSave={handleSaveEtiquetaStatus}
+                    onClose={() => setIsBlockEtiquetaModalOpen(false)}
+                />
+            )}
         </div>
     );
 };
 
+// ... (GerenciadorSessoes and sub-components remain unchanged)
 const GerenciadorSessoes: React.FC = () => {
     const { inventoryCountSessions } = useWMS();
     const [view, setView] = useState<'list' | 'counting'>('list');

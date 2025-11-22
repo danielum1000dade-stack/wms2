@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus } from '../types';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus, EtiquetaStatus } from '../types';
 import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
@@ -26,12 +26,13 @@ const CadastroPage: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900">Cadastros Gerais</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Cadastros e Importações</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
                 <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
                     <TabButton tabName="enderecos" label="Endereços" icon={MapIcon} />
                     <TabButton tabName="skus" label="SKUs" icon={ArchiveBoxIcon} />
                     <TabButton tabName="industrias" label="Indústrias" icon={BuildingOffice2Icon} />
+                    <TabButton tabName="importar_estoque" label="Importar Estoque" icon={ArrowUpTrayIcon} />
                     <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
                     <TabButton tabName="perfis" label="Perfis de Acesso" icon={ShieldCheckIcon} />
                 </div>
@@ -39,6 +40,7 @@ const CadastroPage: React.FC = () => {
                     {activeTab === 'enderecos' && <CadastroEnderecos />}
                     {activeTab === 'skus' && <CadastroSKUs />}
                     {activeTab === 'industrias' && <CadastroIndustrias />}
+                    {activeTab === 'importar_estoque' && <ImportarEstoqueInicial />}
                     {activeTab === 'usuarios' && <CadastroUsuarios />}
                     {activeTab === 'perfis' && <CadastroPerfis />}
                 </div>
@@ -343,19 +345,48 @@ const CadastroSKUs: React.FC = () => {
     };
     
     const handleImport = (data: any[]) => {
-        addSkusBatch(data);
-        alert(`${data.length} SKUs importados com sucesso!`);
+        const skusToImport: Omit<SKU, 'id'>[] = [];
+        const errors: string[] = [];
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const { industria: industriaName, ...skuData } = row;
+            let industriaId: string | undefined = undefined;
+
+            if (industriaName) {
+                const foundIndustria = industrias.find(ind => ind.nome.toLowerCase() === String(industriaName).toLowerCase());
+                if (foundIndustria) {
+                    industriaId = foundIndustria.id;
+                } else {
+                    errors.push(`Linha ${i + 2}: Indústria "${industriaName}" para o SKU "${row.sku}" não foi encontrada no cadastro.`);
+                    continue; // Pula para a próxima linha
+                }
+            }
+            skusToImport.push({ ...skuData, industriaId, status: SKUStatus.ATIVO });
+        }
+
+        if (errors.length > 0) {
+            alert(`A importação falhou. Foram encontrados ${errors.length} erros:\n\n${errors.join('\n')}`);
+            return;
+        }
+
+        if (skusToImport.length > 0) {
+            addSkusBatch(skusToImport);
+            alert(`${skusToImport.length} SKUs foram importados com sucesso!`);
+        } else if (data.length > 0) {
+             alert('Nenhum SKU para importar após a validação. Verifique os erros no seu arquivo.');
+        }
     };
 
     const handleDownloadTemplate = () => {
         const headers = [
             'sku', 'descritivo', 'totalCaixas', 'tempoVida', 'peso', 
             'qtdPorCamada', 'camadaPorLastro', 'sre1', 'sre2', 'sre3', 
-            'sre4', 'sre5', 'classificacao', 'familia'
+            'sre4', 'sre5', 'classificacao', 'familia', 'industria'
         ];
         const exampleData = [[
             'SKU001', 'Produto Exemplo', 100, 365, 12.5, 
-            20, 5, 'A', 'B', '', '', '', 'Alimento', 'Congelado'
+            20, 5, 'A', 'B', '', '', '', 'Alimento', 'Congelado', 'Industria Exemplo S.A.'
         ]];
         
         const dataToExport = [headers, ...exampleData];
@@ -380,6 +411,7 @@ const CadastroSKUs: React.FC = () => {
         sre5: { type: 'string', required: false },
         classificacao: { type: 'string', required: true },
         familia: { type: 'string', required: true },
+        industria: { type: 'string', required: false },
     };
 
 
@@ -753,5 +785,97 @@ const CadastroPerfis: React.FC = () => {
     );
 };
 
+const ImportarEstoqueInicial: React.FC = () => {
+    const { enderecos, skus, addEtiqueta } = useWMS();
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+    const handleDownloadTemplate = () => {
+        const headers = ['endereco', 'sku', 'lote', 'validade', 'quantidadeCaixas', 'observacoes'];
+        const exampleData = [['A01-01-A', 'SKU001', 'LOTE123', '2025-12-31', 100, 'Carga inicial']];
+        
+        const dataToExport = [headers, ...exampleData];
+        const ws = XLSX.utils.aoa_to_sheet(dataToExport);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Modelo_Estoque_Inicial");
+        XLSX.writeFile(wb, "modelo_importacao_estoque.xlsx");
+    };
+
+    const columnConfig = {
+        endereco: { type: 'string', required: true },
+        sku: { type: 'string', required: true },
+        lote: { type: 'string', required: true },
+        validade: { type: 'string', required: true },
+        quantidadeCaixas: { type: 'number', required: true },
+        observacoes: { type: 'string', required: false },
+    };
+
+    const handleImport = (data: any[]) => {
+        const errors: string[] = [];
+        let successes = 0;
+
+        for (let i = 0; i < data.length; i++) {
+            const row = data[i];
+            const endereco = enderecos.find(e => e.codigo.toLowerCase() === row.endereco.toLowerCase());
+            if (!endereco) {
+                errors.push(`Linha ${i + 2}: Endereço "${row.endereco}" não encontrado.`);
+                continue;
+            }
+            if (endereco.status === EnderecoStatus.OCUPADO) {
+                errors.push(`Linha ${i + 2}: Endereço "${row.endereco}" já está ocupado.`);
+                continue;
+            }
+
+            const sku = skus.find(s => s.sku.toLowerCase() === row.sku.toLowerCase());
+            if (!sku) {
+                errors.push(`Linha ${i + 2}: SKU "${row.sku}" não encontrado.`);
+                continue;
+            }
+
+            // Date validation
+            const validadeDate = new Date(row.validade);
+            if (isNaN(validadeDate.getTime())) {
+                errors.push(`Linha ${i + 2}: Data de validade "${row.validade}" inválida. Use o formato AAAA-MM-DD.`);
+                continue;
+            }
+            
+            addEtiqueta({
+                enderecoId: endereco.id,
+                skuId: sku.id,
+                lote: row.lote,
+                validade: row.validade,
+                quantidadeCaixas: Number(row.quantidadeCaixas),
+                observacoes: row.observacoes || '',
+                status: EtiquetaStatus.ARMAZENADA,
+                dataApontamento: new Date().toISOString(),
+                dataArmazenagem: new Date().toISOString(),
+            });
+            successes++;
+        }
+
+        let message = `${successes} itens de estoque importados com sucesso!`;
+        if (errors.length > 0) {
+            message += `\n\nFalha em ${errors.length} itens:\n${errors.join('\n')}`;
+        }
+        alert(message);
+    };
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Importação de Estoque Inicial</h2>
+            <p className="text-gray-600">
+                Use esta ferramenta para fazer a carga inicial do seu estoque no sistema. Baixe o modelo, preencha com os dados do seu inventário e importe o arquivo.
+            </p>
+            <div className="flex space-x-2">
+                <button onClick={handleDownloadTemplate} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">
+                    <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Baixar Modelo
+                </button>
+                <button onClick={() => setIsImportModalOpen(true)} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700">
+                    <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Importar Estoque
+                </button>
+            </div>
+             {isImportModalOpen && <ImportExcelModal title="Importar Estoque Inicial" columnConfig={columnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
+        </div>
+    );
+};
 
 export default CadastroPage;

@@ -4,7 +4,7 @@ import {
     SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
     EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
     EnderecoStatus, User, UserStatus, Profile, Permission,
-    InventoryCountSession, InventoryCountItem, SKUStatus
+    InventoryCountSession, InventoryCountItem, SKUStatus, PedidoItem
 } from '../types';
 
 const ADMIN_PROFILE_ID = 'admin_profile';
@@ -81,9 +81,14 @@ interface WMSContextType {
     armazenarEtiqueta: (id: string, enderecoId: string) => { success: boolean, message?: string };
     pedidos: Pedido[];
     addPedidos: (pedidos: Pedido[]) => void;
+    processTransportData: (transportData: any[]) => { success: boolean; message: string; };
+    generateMissionsForPedido: (pedidoId: string) => { success: boolean; message: string; };
     missoes: Missao[];
     createPickingMissions: (pedido: Pedido) => void;
-    createMission: (missionData: Omit<Missao, 'id' | 'status'>) => Missao;
+    createMission: (missionData: Omit<Missao, 'id' | 'status' | 'createdAt'>) => Missao;
+    deleteMission: (missionId: string) => { success: boolean; message?: string };
+    assignNextMission: (operadorId: string) => Missao | null;
+    updateMissionStatus: (missionId: string, status: Missao['status']) => void;
     palletsConsolidados: PalletConsolidado[];
     addPalletConsolidado: (pallet: Omit<PalletConsolidado, 'id'>) => PalletConsolidado;
     divergencias: Divergencia[];
@@ -370,6 +375,143 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Pedido Management
     const addPedidos = (newPedidos: Pedido[]) => setPedidos([...pedidos, ...newPedidos]);
 
+     const processTransportData = (transportData: any[]): { success: boolean; message: string; } => {
+        const groupedByTransporte = transportData.reduce((acc, row) => {
+            const transporteNum = row['Nº Transporte'];
+            if (!acc[transporteNum]) {
+                acc[transporteNum] = [];
+            }
+            acc[transporteNum].push(row);
+            return acc;
+        }, {} as Record<string, any[]>);
+
+        const newPedidos: Pedido[] = [];
+        for (const numeroTransporte in groupedByTransporte) {
+            if (pedidos.some(p => p.numeroTransporte === numeroTransporte)) {
+                 return { success: false, message: `Transporte ${numeroTransporte} já existe.`};
+            }
+            const items: PedidoItem[] = [];
+            for (const row of groupedByTransporte[numeroTransporte]) {
+                const sku = skus.find(s => s.sku === row['Cód. Item']);
+                if (!sku) {
+                    return { success: false, message: `SKU ${row['Cód. Item']} não encontrado no cadastro.` };
+                }
+                items.push({
+                    sku: sku.sku,
+                    descricao: row['Descrição do Produto'],
+                    lote: row['Lote'],
+                    quantidadeCaixas: row['Unid. Exp. (Caixa)'],
+                    unidadeArmazem: row['Unidade de Armazém'],
+                    totalUnidVda: row['Total (Unid. Vda.)'],
+                    unidExpFracao: row['Unid. Exp. (Fração)'],
+                    pesoBruto: row['Peso Bruto'],
+                    pesoLiquido: row['Peso Líquido'],
+                });
+            }
+            newPedidos.push({
+                id: `T-${generateId()}`,
+                numeroTransporte,
+                items,
+                status: 'Pendente',
+                createdAt: new Date().toISOString(),
+            });
+        }
+        setPedidos(prev => [...prev, ...newPedidos]);
+        return { success: true, message: `${newPedidos.length} transportes importados com sucesso.` };
+    };
+
+    const generateMissionsForPedido = (pedidoId: string): { success: boolean; message: string; } => {
+        const pedido = pedidos.find(p => p.id === pedidoId);
+        if (!pedido) return { success: false, message: "Pedido não encontrado." };
+
+        const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.ANTECAMARA);
+        if (!antechamber) return { success: false, message: "Nenhum endereço do tipo 'Antecâmara' encontrado para ser o destino." };
+
+        let newMissions: Missao[] = [];
+        let missionEtiquetas = new Set<string>();
+
+        for (const item of pedido.items) {
+            const sku = skus.find(s => s.sku === item.sku);
+            if (!sku) {
+                console.warn(`SKU ${item.sku} não encontrado para o pedido ${pedido.id}`);
+                continue;
+            }
+
+            let quantidadePendente = item.quantidadeCaixas;
+            const caixasPorPallet = sku.totalCaixas;
+
+            // 1. Processar pallets fechados
+            if (caixasPorPallet > 0 && quantidadePendente >= caixasPorPallet) {
+                const numPalletsFechados = Math.floor(quantidadePendente / caixasPorPallet);
+                const palletsDisponiveis = etiquetas.filter(e =>
+                    e.skuId === sku.id &&
+                    e.status === EtiquetaStatus.ARMAZENADA &&
+                    e.quantidadeCaixas === caixasPorPallet &&
+                    !missionEtiquetas.has(e.id)
+                ).slice(0, numPalletsFechados);
+
+                for (const pallet of palletsDisponiveis) {
+                    if (pallet.enderecoId) {
+                         newMissions.push({
+                            id: generateId(),
+                            tipo: MissaoTipo.MOVIMENTACAO_PALLET,
+                            pedidoId: pedido.id,
+                            etiquetaId: pallet.id,
+                            skuId: sku.id,
+                            quantidade: pallet.quantidadeCaixas || 0,
+                            origemId: pallet.enderecoId,
+                            destinoId: antechamber.id,
+                            status: 'Pendente',
+                            createdAt: new Date().toISOString(),
+                        });
+                        missionEtiquetas.add(pallet.id);
+                    }
+                }
+                quantidadePendente -= palletsDisponiveis.length * caixasPorPallet;
+            }
+
+            // 2. Processar picking para o restante
+            if (quantidadePendente > 0) {
+                 const etiquetasPicking = etiquetas.filter(e => 
+                    e.skuId === sku.id && 
+                    e.status === EtiquetaStatus.ARMAZENADA &&
+                    !missionEtiquetas.has(e.id)
+                ).sort((a,b) => (a.quantidadeCaixas ?? 0) - (b.quantidadeCaixas ?? 0));
+                
+                 for(const etiqueta of etiquetasPicking) {
+                    if(quantidadePendente <= 0) break;
+                    const quantidadeRetirar = Math.min(quantidadePendente, etiqueta.quantidadeCaixas ?? 0);
+                    if (quantidadeRetirar > 0 && etiqueta.enderecoId) {
+                        newMissions.push({
+                            id: generateId(),
+                            tipo: MissaoTipo.PICKING,
+                            pedidoId: pedido.id,
+                            etiquetaId: etiqueta.id,
+                            skuId: sku.id,
+                            quantidade: quantidadeRetirar,
+                            origemId: etiqueta.enderecoId,
+                            destinoId: antechamber.id,
+                            status: 'Pendente',
+                            createdAt: new Date().toISOString(),
+                        });
+                        missionEtiquetas.add(etiqueta.id);
+                        quantidadePendente -= quantidadeRetirar;
+                    }
+                }
+            }
+        }
+        
+        if (newMissions.length > 0) {
+            setMissoes(prev => [...prev, ...newMissions]);
+            setEtiquetas(prev => prev.map(e => missionEtiquetas.has(e.id) ? { ...e, status: EtiquetaStatus.EM_SEPARACAO } : e));
+            setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, status: 'Em Separação' } : p));
+             return { success: true, message: `${newMissions.length} missões geradas.` };
+        }
+
+        return { success: false, message: "Nenhuma missão necessária ou estoque indisponível." };
+    };
+
+
     // Missao Management
     const createPickingMissions = (pedido: Pedido) => {
         const newMissions: Missao[] = [];
@@ -387,6 +529,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const etiquetasDisponiveis = etiquetas.filter(e => 
                 e.skuId === itemSku.id && 
                 e.status === EtiquetaStatus.ARMAZENADA &&
+                !e.isBlocked &&
                 e.lote === item.lote
             ).sort((a,b) => (a.quantidadeCaixas ?? 0) - (b.quantidadeCaixas ?? 0));
 
@@ -406,6 +549,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         origemId: etiqueta.enderecoId,
                         destinoId: enderecos.find(e => e.tipo === EnderecoTipo.ANTECAMARA)?.id || 'N/A',
                         status: 'Pendente',
+                        createdAt: new Date().toISOString(),
                     });
                     quantidadePendente -= quantidadeRetirar;
                 }
@@ -415,19 +559,131 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (newMissions.length > 0) {
             setMissoes([...missoes, ...newMissions]);
             setPedidos(pedidos.map(p => p.id === pedido.id ? {...p, status: 'Em Separação'} : p));
+            
+            const missionEtiquetaIds = new Set(newMissions.map(m => m.etiquetaId));
+            setEtiquetas(prevEtiquetas => 
+                prevEtiquetas.map(etiqueta => 
+                    missionEtiquetaIds.has(etiqueta.id) 
+                        ? { ...etiqueta, status: EtiquetaStatus.EM_SEPARACAO } 
+                        : etiqueta
+                )
+            );
         }
     };
 
-    const createMission = (missionData: Omit<Missao, 'id' | 'status'>): Missao => {
+    const createMission = (missionData: Omit<Missao, 'id' | 'status' | 'createdAt'>): Missao => {
         const newMission: Missao = {
             ...missionData,
             id: `M-${generateId()}`,
             status: 'Pendente',
+            createdAt: new Date().toISOString(),
         };
         setMissoes(prev => [...prev, newMission]);
+        
+        setEtiquetas(prevEtiquetas => 
+            prevEtiquetas.map(etiqueta =>
+                etiqueta.id === missionData.etiquetaId
+                    ? { ...etiqueta, status: EtiquetaStatus.EM_SEPARACAO }
+                    : etiqueta
+            )
+        );
+
         return newMission;
     };
     
+    const deleteMission = (missionId: string): { success: boolean, message?: string } => {
+        const missionToDelete = missoes.find(m => m.id === missionId);
+
+        if (!missionToDelete) {
+            return { success: false, message: 'Missão não encontrada.' };
+        }
+
+        if (missionToDelete.status !== 'Pendente') {
+            return { success: false, message: 'Apenas missões pendentes podem ser excluídas.' };
+        }
+
+        // Revert pallet status to Armazenada
+        setEtiquetas(prevEtiquetas => 
+            prevEtiquetas.map(etiqueta => 
+                etiqueta.id === missionToDelete.etiquetaId 
+                    ? { ...etiqueta, status: EtiquetaStatus.ARMAZENADA } 
+                    : etiqueta
+            )
+        );
+
+        // Remove mission
+        setMissoes(prevMissoes => prevMissoes.filter(m => m.id !== missionId));
+        
+        return { success: true };
+    };
+
+    const updateMissionStatus = (missionId: string, status: Missao['status']) => {
+        let pedidoIdToUpdate: string | undefined;
+        let completedMission: Missao | undefined;
+        
+        setMissoes(prev => prev.map(m => {
+            if (m.id === missionId) {
+                const updatedMission = { ...m, status };
+                if (status === 'Concluída') {
+                    pedidoIdToUpdate = m.pedidoId;
+                    completedMission = updatedMission;
+                }
+                return updatedMission;
+            }
+            return m;
+        }));
+
+         if (status === 'Concluída' && pedidoIdToUpdate) {
+            const allMissionsForPedido = missoes.filter(m => m.pedidoId === pedidoIdToUpdate && m.id !== missionId);
+            const allOthersCompleted = allMissionsForPedido.every(m => m.status === 'Concluída');
+            
+            if (allOthersCompleted) {
+                setPedidos(prev => prev.map(p => p.id === pedidoIdToUpdate ? { ...p, status: 'Separado' } : p));
+                const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.EXPEDICAO);
+                if (completedMission && antechamber) {
+                    createMission({
+                        tipo: MissaoTipo.CONFERENCIA,
+                        pedidoId: pedidoIdToUpdate,
+                        etiquetaId: 'N/A', // Conferência não é sobre um pallet, mas um pedido
+                        skuId: 'N/A',
+                        quantidade: 0,
+                        origemId: completedMission.destinoId,
+                        destinoId: antechamber.id
+                    });
+                }
+            }
+        }
+    };
+    
+    const assignNextMission = (operadorId: string): Missao | null => {
+        const hasActiveMission = missoes.some(m => m.operadorId === operadorId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
+        if (hasActiveMission) {
+            console.warn(`Operator ${operadorId} already has an active mission.`);
+            return null;
+        }
+
+        const pendingMissions = missoes
+            .filter(m => m.status === 'Pendente')
+            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+        if (pendingMissions.length === 0) {
+            return null;
+        }
+
+        const missionToAssign = pendingMissions[0];
+
+        const updatedMission = {
+            ...missionToAssign,
+            status: 'Atribuída' as const,
+            operadorId: operadorId,
+        };
+
+        setMissoes(prev => prev.map(m => m.id === updatedMission.id ? updatedMission : m));
+
+        return updatedMission;
+    };
+
+
     // Pallet Consolidado Management
     const addPalletConsolidado = (pallet: Omit<PalletConsolidado, 'id'>) => {
         const newPallet = { ...pallet, id: `PALLET-${generateId()}` };
@@ -580,8 +836,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
         recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, addEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
-        pedidos, addPedidos,
-        missoes, createPickingMissions, createMission,
+        pedidos, addPedidos, processTransportData, generateMissionsForPedido,
+        missoes, createPickingMissions, createMission, deleteMission, assignNextMission, updateMissionStatus,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,
