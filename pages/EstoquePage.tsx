@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria } from '../types';
+// FIX: Imported missing types 'InventoryCountSession' and 'InventoryCountItem' to resolve 'Cannot find name' errors throughout the component.
+import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria, InventoryCountSession, InventoryCountItem, SKUStatus } from '../types';
 import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon, TruckIcon } from '@heroicons/react/24/outline';
 import ReplenishmentModal from '../components/ReplenishmentModal';
 
@@ -132,8 +133,11 @@ const ConsultaEstoque: React.FC = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {filteredStock.map(({ etiqueta, endereco, sku }) => (
-                            <tr key={etiqueta.id}>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{sku?.sku}</td>
+                            <tr key={etiqueta.id} className={sku?.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : ''}>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                    {sku?.sku}
+                                    {sku?.status === SKUStatus.BLOQUEADO && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">Bloqueado</span>}
+                                </td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{sku?.descritivo}</td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{endereco?.nome}</td>
                                 <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{etiqueta.quantidadeCaixas}</td>

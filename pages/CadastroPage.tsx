@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon } from '@heroicons/react/24/outline';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus } from '../types';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
 import UserModal from '../components/UserModal';
 import ProfileModal from '../components/ProfileModal';
+import BlockSKUModal from '../components/BlockSKUModal';
 
 
 declare const XLSX: any;
@@ -295,6 +296,8 @@ const CadastroSKUs: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentSku, setCurrentSku] = useState<Partial<SKU> | null>(null);
+    const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+    const [skuToBlock, setSkuToBlock] = useState<SKU | null>(null);
 
     const openModal = (sku: Partial<SKU> | null = null) => {
         setCurrentSku(sku || {});
@@ -306,6 +309,16 @@ const CadastroSKUs: React.FC = () => {
         setIsModalOpen(false);
     };
 
+    const openBlockModal = (sku: SKU) => {
+        setSkuToBlock(sku);
+        setIsBlockModalOpen(true);
+    };
+
+    const closeBlockModal = () => {
+        setSkuToBlock(null);
+        setIsBlockModalOpen(false);
+    };
+
     const handleSave = (formData: Omit<SKU, 'id'>) => {
         if (currentSku && 'id' in currentSku) {
             updateSku({ ...currentSku, ...formData } as SKU);
@@ -313,6 +326,11 @@ const CadastroSKUs: React.FC = () => {
             addSku(formData);
         }
         closeModal();
+    };
+    
+    const handleSaveStatus = (sku: SKU) => {
+        updateSku(sku);
+        closeBlockModal();
     };
 
     const handleDeleteSku = (sku: SKU) => {
@@ -390,6 +408,7 @@ const CadastroSKUs: React.FC = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descritivo</th>
                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família</th>
                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indústria</th>
+                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                         </tr>
                     </thead>
@@ -397,13 +416,21 @@ const CadastroSKUs: React.FC = () => {
                         {skus.map(s => {
                             const industria = industrias.find(i => i.id === s.industriaId);
                             return (
-                                <tr key={s.id}>
+                                <tr key={s.id} className={s.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : ''}>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.sku}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.descritivo}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.familia}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{industria?.nome || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            s.status === SKUStatus.ATIVO ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                        }`}>
+                                            {s.status}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button onClick={() => openModal(s)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => openBlockModal(s)} className="text-gray-500 hover:text-gray-800" title="Bloquear/Desbloquear SKU"><LockClosedIcon className="h-5 w-5" /></button>
+                                        <button onClick={() => openModal(s)} className="text-indigo-600 hover:text-indigo-900 ml-4"><PencilIcon className="h-5 w-5" /></button>
                                         <button onClick={() => handleDeleteSku(s)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
                                     </td>
                                 </tr>
@@ -414,6 +441,7 @@ const CadastroSKUs: React.FC = () => {
             </div>
             {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} industrias={industrias} />}
             {isImportModalOpen && <ImportExcelModal title="Importar SKUs" columnConfig={skuColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
+            {isBlockModalOpen && skuToBlock && <BlockSKUModal sku={skuToBlock} onSave={handleSaveStatus} onClose={closeBlockModal} />}
         </div>
     )
 }

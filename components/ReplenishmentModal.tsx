@@ -9,7 +9,8 @@ interface ReplenishmentModalProps {
 }
 
 const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({ etiqueta, onClose, onMissionCreated }) => {
-    const { skus, enderecos, createMission } = useWMS();
+    // FIX: Destructured `etiquetas` from the `useWMS` hook to make it available for finding pallets in picking locations.
+    const { skus, enderecos, createMission, etiquetas } = useWMS();
     
     const sourceSku = useMemo(() => skus.find(s => s.id === etiqueta.skuId), [skus, etiqueta.skuId]);
     const sourceEndereco = useMemo(() => enderecos.find(e => e.id === etiqueta.enderecoId), [enderecos, etiqueta.enderecoId]);
@@ -32,7 +33,7 @@ const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({ etiqueta, onClo
         // Combine and remove duplicates
         const combined = [...sameSkuPickingLocations, ...emptyPickingLocations];
         return Array.from(new Set(combined.map(e => e.id))).map(id => combined.find(e => e.id === id) as Endereco);
-
+    // FIX: Added `etiquetas` to the dependency array to ensure the memoized value is recalculated when the list of etiquetas changes.
     }, [enderecos, etiquetas, sourceSku]);
 
     const handleConfirm = () => {

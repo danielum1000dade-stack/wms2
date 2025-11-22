@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { SKU, Industria } from '../types';
+import { SKU, Industria, SKUStatus } from '../types';
 
 interface SKUModalProps {
     sku: Partial<SKU>;
@@ -26,11 +25,20 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias })
         classificacao: sku?.classificacao || '',
         familia: sku?.familia || '',
         industriaId: sku?.industriaId || '',
+        status: sku?.status || SKUStatus.ATIVO,
+        motivoBloqueio: sku?.motivoBloqueio || '',
     });
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
-        setFormData(prev => ({ ...prev, [name]: type === 'number' ? parseFloat(value) : value }));
+
+        setFormData(prev => {
+            const updated = { ...prev, [name]: type === 'number' ? parseFloat(value) : value };
+            if (name === 'status' && value === SKUStatus.ATIVO) {
+                updated.motivoBloqueio = '';
+            }
+            return updated;
+        });
     }
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -67,6 +75,18 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias })
                                 {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
                             </select>
                         </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Status</label>
+                            <select name="status" value={formData.status} onChange={handleChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                                {Object.values(SKUStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        {formData.status === SKUStatus.BLOQUEADO && (
+                             <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
+                                <textarea name="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} required rows={2} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                            </div>
+                        )}
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>

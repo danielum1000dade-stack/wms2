@@ -1,3 +1,8 @@
+export enum SKUStatus {
+  ATIVO = 'Ativo',
+  BLOQUEADO = 'Bloqueado'
+}
+
 export interface SKU {
   id: string;
   sku: string;
@@ -15,6 +20,8 @@ export interface SKU {
   classificacao: string;
   familia: string;
   industriaId?: string;
+  status: SKUStatus;
+  motivoBloqueio?: string;
 }
 
 export interface Industria {

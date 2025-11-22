@@ -4,7 +4,7 @@ import {
     SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
     EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
     EnderecoStatus, User, UserStatus, Profile, Permission,
-    InventoryCountSession, InventoryCountItem
+    InventoryCountSession, InventoryCountItem, SKUStatus
 } from '../types';
 
 const ADMIN_PROFILE_ID = 'admin_profile';
@@ -131,12 +131,12 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // SKU Management
     const addSku = (sku: Omit<SKU, 'id'>): SKU => {
-        const newSku = { ...sku, id: generateId() };
+        const newSku = { ...sku, id: generateId(), status: SKUStatus.ATIVO };
         setSkus(prev => [...prev, newSku]);
         return newSku;
     };
     const addSkusBatch = (newSkus: Omit<SKU, 'id'>[]) => {
-        const skusWithIds = newSkus.map(sku => ({ ...sku, id: generateId() }));
+        const skusWithIds = newSkus.map(sku => ({ ...sku, id: generateId(), status: SKUStatus.ATIVO }));
         setSkus(prev => [...prev, ...skusWithIds]);
     };
     const updateSku = (updatedSku: SKU) => setSkus(skus.map(s => s.id === updatedSku.id ? updatedSku : s));
@@ -373,12 +373,19 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Missao Management
     const createPickingMissions = (pedido: Pedido) => {
         const newMissions: Missao[] = [];
+        const blockedSkuIds = skus.filter(s => s.status === SKUStatus.BLOQUEADO).map(s => s.id);
         
         pedido.items.forEach(item => {
             let quantidadePendente = item.quantidadeCaixas;
             
+            const itemSku = skus.find(s => s.sku === item.sku);
+            if (!itemSku || blockedSkuIds.includes(itemSku.id)) {
+                console.warn(`SKU ${item.sku} not found or is blocked. Skipping picking mission creation for this item.`);
+                return; // Skip to next item if SKU is blocked or not found
+            }
+
             const etiquetasDisponiveis = etiquetas.filter(e => 
-                e.skuId === skus.find(s => s.sku === item.sku)?.id && 
+                e.skuId === itemSku.id && 
                 e.status === EtiquetaStatus.ARMAZENADA &&
                 e.lote === item.lote
             ).sort((a,b) => (a.quantidadeCaixas ?? 0) - (b.quantidadeCaixas ?? 0));

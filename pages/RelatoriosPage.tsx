@@ -235,10 +235,8 @@ const RelatorioInventarioConsolidado: React.FC = () => {
             skus: Record<string, ConsolidatedSkuData>;
         };
 
-        // FIX: The original reduce function was incorrectly typed, leading to type inference issues.
-        // By casting the initial value of the accumulator to the correct type, we ensure that TypeScript
-        // correctly infers the types for `consolidated`, `industriaData`, and `skusList`, resolving all related errors.
-        const consolidated = filteredByIndustria.reduce((acc, et) => {
+        // FIX: Explicitly type the accumulator for the reduce function to prevent cascading 'unknown' type errors.
+        const consolidated = filteredByIndustria.reduce<Record<string, ConsolidatedIndustriaData>>((acc, et) => {
             const sku = skus.find(s => s.id === et.skuId);
             if (!sku) return acc;
             
@@ -266,7 +264,7 @@ const RelatorioInventarioConsolidado: React.FC = () => {
             });
 
             return acc;
-        }, {} as Record<string, ConsolidatedIndustriaData>);
+        }, {});
 
         return Object.values(consolidated).map(industriaData => {
             const skusList = Object.values(industriaData.skus);
