@@ -5,6 +5,128 @@ import { CameraIcon, CheckCircleIcon, LightBulbIcon, MapPinIcon, XCircleIcon } f
 
 declare const Html5QrcodeScanner: any;
 
+interface ActionPanelProps {
+    selectedEtiqueta: Etiqueta | null;
+    skus: SKU[];
+    suggestedEndereco: Endereco | null;
+    finalEndereco: Endereco | null;
+    setFinalEndereco: React.Dispatch<React.SetStateAction<Endereco | null>>;
+    manualAddressInput: string;
+    setManualAddressInput: React.Dispatch<React.SetStateAction<string>>;
+    enderecos: Endereco[];
+    setErrorFeedback: React.Dispatch<React.SetStateAction<string | null>>;
+    isAddressScanning: boolean;
+    setIsAddressScanning: React.Dispatch<React.SetStateAction<boolean>>;
+    handleManualConfirm: () => void;
+}
+
+const ActionPanel: React.FC<ActionPanelProps> = ({
+    selectedEtiqueta,
+    skus,
+    suggestedEndereco,
+    finalEndereco,
+    setFinalEndereco,
+    manualAddressInput,
+    setManualAddressInput,
+    enderecos,
+    setErrorFeedback,
+    isAddressScanning,
+    setIsAddressScanning,
+    handleManualConfirm,
+}) => {
+    if (!selectedEtiqueta) {
+        return <div className="flex items-center justify-center h-full bg-gray-50 rounded-lg text-gray-500">Selecione ou leia um pallet para começar</div>;
+    }
+
+    if(finalEndereco){
+         return (
+            <div className="p-6 bg-white rounded-lg shadow-inner space-y-4 text-center">
+                <MapPinIcon className="h-12 w-12 mx-auto text-indigo-500" />
+                <h3 className="text-lg font-semibold">3. Confirmar Movimentação</h3>
+                <p>Movendo pallet <span className="font-mono">{selectedEtiqueta.id}</span> para o endereço:</p>
+                <p className="text-2xl font-bold text-indigo-600 bg-indigo-50 py-2 px-4 rounded-md">{finalEndereco.nome}</p>
+                <div className="space-y-2">
+                    <button
+                        onClick={() => setIsAddressScanning(!isAddressScanning)}
+                        className={`w-full flex items-center justify-center px-4 py-3 text-white font-semibold rounded-lg shadow-md transition-colors ${isAddressScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                    >
+                        {isAddressScanning ? <XCircleIcon className="h-6 w-6 mr-2"/> : <CameraIcon className="h-6 w-6 mr-2"/>}
+                        {isAddressScanning ? 'Cancelar Leitura' : 'Escanear Endereço para Confirmar'}
+                    </button>
+                    <button
+                        onClick={handleManualConfirm}
+                        className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                    >
+                        <CheckCircleIcon className="h-5 w-5 mr-2 text-gray-600" />
+                        Confirmar Manualmente
+                    </button>
+                </div>
+                {isAddressScanning && <div id="address-reader" className="w-full mx-auto mt-4 border rounded-lg"></div>}
+            </div>
+        );
+    }
+
+    const sku = skus.find(s => s.id === selectedEtiqueta.skuId);
+
+    return (
+        <div className="p-6 bg-white rounded-lg shadow-inner space-y-6">
+            <div>
+                <h3 className="text-lg font-semibold">2. Definir Endereço de Destino</h3>
+                <p className="font-mono text-indigo-700">{selectedEtiqueta.id}</p>
+                <p className="text-sm text-gray-600">{sku?.descritivo}</p>
+            </div>
+            
+            <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
+                <h4 className="font-semibold flex items-center text-yellow-800"><LightBulbIcon className="h-5 w-5 mr-2"/> Endereço Sugerido</h4>
+                {suggestedEndereco ? (
+                    <>
+                        <p className="text-xl font-bold text-gray-800 my-2">{suggestedEndereco.nome}</p>
+                        <button onClick={() => setFinalEndereco(suggestedEndereco)} className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-md hover:bg-yellow-500">
+                            Usar Sugestão
+                        </button>
+                    </>
+                ) : (
+                     <p className="text-gray-600 mt-2">Nenhuma posição ideal encontrada. Verifique os cadastros de endereço ou SRE.</p>
+                )}
+            </div>
+
+            <div>
+                <h4 className="font-semibold text-gray-700">Endereçamento Manual</h4>
+                <p className="text-sm text-gray-500 mb-2">Digite ou escaneie um endereço de destino.</p>
+                 <div className="flex items-center space-x-2">
+                    <input 
+                        type="text"
+                        placeholder="Ex: A01-01-A"
+                        value={manualAddressInput}
+                        onChange={(e) => setManualAddressInput(e.target.value)}
+                        className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3"
+                    />
+                    <button
+                        onClick={() => {
+                            const addressToFind = manualAddressInput.toUpperCase();
+                            const found = enderecos.find(end => end.codigo.toUpperCase() === addressToFind);
+                            if (found) {
+                                if (found.status !== EnderecoStatus.LIVRE) {
+                                    setErrorFeedback(`Endereço "${found.codigo}" está ${found.status}!`);
+                                } else {
+                                    setFinalEndereco(found);
+                                    setErrorFeedback(null);
+                                }
+                            } else if (manualAddressInput) {
+                                setErrorFeedback('Endereço não encontrado.');
+                            }
+                        }}
+                        className="flex-shrink-0 bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600"
+                    >
+                        Usar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const ArmazenagemPage: React.FC = () => {
     const { etiquetas, enderecos, skus, armazenarEtiqueta } = useWMS();
     
@@ -183,99 +305,6 @@ const ArmazenagemPage: React.FC = () => {
         );
     }
 
-    const ActionPanel: React.FC = () => {
-        if (!selectedEtiqueta) {
-            return <div className="flex items-center justify-center h-full bg-gray-50 rounded-lg text-gray-500">Selecione ou leia um pallet para começar</div>;
-        }
-
-        if(finalEndereco){
-             return (
-                <div className="p-6 bg-white rounded-lg shadow-inner space-y-4 text-center">
-                    <MapPinIcon className="h-12 w-12 mx-auto text-indigo-500" />
-                    <h3 className="text-lg font-semibold">3. Confirmar Movimentação</h3>
-                    <p>Movendo pallet <span className="font-mono">{selectedEtiqueta.id}</span> para o endereço:</p>
-                    <p className="text-2xl font-bold text-indigo-600 bg-indigo-50 py-2 px-4 rounded-md">{finalEndereco.nome}</p>
-                    <div className="space-y-2">
-                        <button
-                            onClick={() => setIsAddressScanning(!isAddressScanning)}
-                            className={`w-full flex items-center justify-center px-4 py-3 text-white font-semibold rounded-lg shadow-md transition-colors ${isAddressScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
-                        >
-                            {isAddressScanning ? <XCircleIcon className="h-6 w-6 mr-2"/> : <CameraIcon className="h-6 w-6 mr-2"/>}
-                            {isAddressScanning ? 'Cancelar Leitura' : 'Escanear Endereço para Confirmar'}
-                        </button>
-                        <button
-                            onClick={handleManualConfirm}
-                            className="w-full flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                        >
-                            <CheckCircleIcon className="h-5 w-5 mr-2 text-gray-600" />
-                            Confirmar Manualmente
-                        </button>
-                    </div>
-                    {isAddressScanning && <div id="address-reader" className="w-full mx-auto mt-4 border rounded-lg"></div>}
-                </div>
-            );
-        }
-
-        const sku = skus.find(s => s.id === selectedEtiqueta.skuId);
-
-        return (
-            <div className="p-6 bg-white rounded-lg shadow-inner space-y-6">
-                <div>
-                    <h3 className="text-lg font-semibold">2. Definir Endereço de Destino</h3>
-                    <p className="font-mono text-indigo-700">{selectedEtiqueta.id}</p>
-                    <p className="text-sm text-gray-600">{sku?.descritivo}</p>
-                </div>
-                
-                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-                    <h4 className="font-semibold flex items-center text-yellow-800"><LightBulbIcon className="h-5 w-5 mr-2"/> Endereço Sugerido</h4>
-                    {suggestedEndereco ? (
-                        <>
-                            <p className="text-xl font-bold text-gray-800 my-2">{suggestedEndereco.nome}</p>
-                            <button onClick={() => setFinalEndereco(suggestedEndereco)} className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-md hover:bg-yellow-500">
-                                Usar Sugestão
-                            </button>
-                        </>
-                    ) : (
-                         <p className="text-gray-600 mt-2">Nenhuma posição ideal encontrada. Verifique os cadastros de endereço ou SRE.</p>
-                    )}
-                </div>
-
-                <div>
-                    <h4 className="font-semibold text-gray-700">Endereçamento Manual</h4>
-                    <p className="text-sm text-gray-500 mb-2">Digite ou escaneie um endereço de destino.</p>
-                     <div className="flex items-center space-x-2">
-                        <input 
-                            type="text"
-                            placeholder="Ex: A01-01-A"
-                            value={manualAddressInput}
-                            onChange={(e) => setManualAddressInput(e.target.value)}
-                            className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 py-2 px-3"
-                        />
-                        <button
-                            onClick={() => {
-                                const addressToFind = manualAddressInput.toUpperCase();
-                                const found = enderecos.find(end => end.codigo.toUpperCase() === addressToFind);
-                                if (found) {
-                                    if (found.status !== EnderecoStatus.LIVRE) {
-                                        setErrorFeedback(`Endereço "${found.codigo}" está ${found.status}!`);
-                                    } else {
-                                        setFinalEndereco(found);
-                                        setErrorFeedback(null);
-                                    }
-                                } else if (manualAddressInput) {
-                                    setErrorFeedback('Endereço não encontrado.');
-                                }
-                            }}
-                            className="flex-shrink-0 bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600"
-                        >
-                            Usar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900">Armazenagem de Pallets</h1>
@@ -330,7 +359,20 @@ const ArmazenagemPage: React.FC = () => {
                     </div>
                 </div>
                 <div className="md:col-span-2">
-                    <ActionPanel/>
+                    <ActionPanel
+                        selectedEtiqueta={selectedEtiqueta}
+                        skus={skus}
+                        suggestedEndereco={suggestedEndereco}
+                        finalEndereco={finalEndereco}
+                        setFinalEndereco={setFinalEndereco}
+                        manualAddressInput={manualAddressInput}
+                        setManualAddressInput={setManualAddressInput}
+                        enderecos={enderecos}
+                        setErrorFeedback={setErrorFeedback}
+                        isAddressScanning={isAddressScanning}
+                        setIsAddressScanning={setIsAddressScanning}
+                        handleManualConfirm={handleManualConfirm}
+                    />
                 </div>
             </div>
         </div>
