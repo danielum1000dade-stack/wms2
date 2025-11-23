@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Missao, MissaoTipo, Pedido, SKU, Endereco } from '../types';
+import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta } from '../types';
 import { ChevronDownIcon, ChevronRightIcon, ClipboardDocumentListIcon, CubeIcon, FlagIcon, InboxIcon, PlayCircleIcon, CheckCircleIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 
 type GroupedAddress = {
@@ -20,6 +19,61 @@ type GroupedTransport = {
     families: GroupedFamily[];
 }
 
+const AddressPickingCard: React.FC<{
+    address: Endereco;
+    missions: Missao[];
+    onCompleteMission: (missionId: string) => void;
+    skus: SKU[];
+    etiquetas: Etiqueta[];
+    startExpanded: boolean;
+}> = ({ address, missions, onCompleteMission, skus, etiquetas, startExpanded }) => {
+    const [isExpanded, setIsExpanded] = useState(startExpanded);
+    const allComplete = missions.every(m => m.status === 'Concluída');
+
+    const MissionItem: React.FC<{ mission: Missao }> = ({ mission }) => {
+        const sku = skus.find(s => s.id === mission.skuId);
+        const etiqueta = etiquetas.find(e => e.id === mission.etiquetaId);
+        const isComplete = mission.status === 'Concluída';
+        return (
+            <div className={`p-3 bg-white border-l-4 rounded-r-md flex justify-between items-center ${isComplete ? 'border-green-500 bg-gray-50' : 'border-indigo-500'}`}>
+                <div className={`transition-opacity ${isComplete ? 'opacity-50' : ''}`}>
+                    <p className={`font-bold text-gray-900 ${isComplete ? 'line-through' : ''}`}>{sku?.descritivo}</p>
+                    <p className="text-sm text-gray-600">SKU: {sku?.sku} | Lote: {etiqueta?.lote}</p>
+                    <p className="text-sm text-gray-600">Pallet de Origem: <span className="font-mono">{etiqueta?.id}</span></p>
+                </div>
+                <div className="text-right flex-shrink-0 ml-4">
+                    <p className={`text-2xl font-bold ${isComplete ? 'text-gray-500 line-through' : 'text-indigo-700'}`}>{mission.quantidade} <span className="text-base font-normal">caixas</span></p>
+                    {!isComplete && (
+                         <button
+                            onClick={() => onCompleteMission(mission.id)}
+                            className="mt-1 flex items-center text-sm bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600 shadow-sm"
+                        >
+                            <CheckCircleIcon className="h-4 w-4 mr-1"/> Confirmar
+                        </button>
+                    )}
+                </div>
+            </div>
+        )
+    };
+
+    return (
+        <div className={`border rounded-lg ${allComplete ? 'bg-green-50 border-green-200' : 'bg-white'}`}>
+            <button onClick={() => setIsExpanded(!isExpanded)} className="w-full flex justify-between items-center p-3 text-left">
+                <div className="flex items-center">
+                     {allComplete ? <CheckCircleIcon className="h-6 w-6 text-green-500 mr-3"/> : <FlagIcon className="h-6 w-6 text-indigo-600 mr-3"/>}
+                    <span className={`font-bold text-lg ${allComplete ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{address.nome}</span>
+                </div>
+                {isExpanded ? <ChevronDownIcon className="h-6 w-6"/> : <ChevronRightIcon className="h-6 w-6"/>}
+            </button>
+            {isExpanded && (
+                <div className="p-3 border-t space-y-2 bg-gray-50">
+                    {missions.map(mission => <MissionItem key={mission.id} mission={mission} />)}
+                </div>
+            )}
+        </div>
+    )
+}
+
 // Componente para a visualização principal quando o operador tem uma missão ativa
 const ActivePickingView: React.FC<{
     activeGroup: GroupedTransport;
@@ -27,15 +81,15 @@ const ActivePickingView: React.FC<{
     onFinishGroup: () => void;
 }> = ({ activeGroup, onCompleteMission, onFinishGroup }) => {
     
-    const activeMissions = useMemo(() =>
-        activeGroup.families.flatMap(f => f.addresses.flatMap(a => a.missions))
-        .filter(m => m.status !== 'Concluída'), [activeGroup]);
+    const allMissions = useMemo(() =>
+        activeGroup.families.flatMap(f => f.addresses.flatMap(a => a.missions)),
+        [activeGroup]
+    );
     
-    const [currentStep, setCurrentStep] = useState(0);
-    // FIX: Destructured `etiquetas` from the `useWMS` hook to resolve 'Cannot find name' error.
-    const { skus, enderecos, etiquetas } = useWMS();
+    const remainingMissions = allMissions.filter(m => m.status !== 'Concluída');
+    const { skus, etiquetas } = useWMS();
 
-    if (activeMissions.length === 0) {
+    if (remainingMissions.length === 0) {
         return (
             <div className="text-center p-8 bg-white rounded-lg shadow-lg">
                 <CheckCircleIcon className="h-16 w-16 text-green-500 mx-auto mb-4" />
@@ -50,51 +104,28 @@ const ActivePickingView: React.FC<{
             </div>
         );
     }
-    
-    const currentAddress = activeMissions[currentStep].origemId;
-    const missionsForCurrentAddress = activeMissions.filter(m => m.origemId === currentAddress);
-    const addressInfo = enderecos.find(e => e.id === currentAddress);
 
-    const handleConfirmPick = (missionId: string) => {
-        onCompleteMission(missionId);
-        // O progresso será gerenciado pelo re-render do useMemo
-    };
+    // Apenas para simplificar, assumimos que um grupo de picking é para uma única família.
+    const addressesToVisit = activeGroup.families[0].addresses;
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-xl border-t-4 border-indigo-500">
             <h2 className="text-2xl font-bold text-gray-800">Separando Transporte: {activeGroup.pedido.numeroTransporte}</h2>
             <p className="text-gray-600">Família: <span className="font-semibold">{activeGroup.families[0].familyName}</span></p>
 
-            <div className="mt-6 p-4 bg-gray-100 rounded-lg animate-fade-in">
-                <p className="text-lg font-semibold text-gray-700">Próximo Endereço:</p>
-                <div className="flex items-center my-2">
-                    <FlagIcon className="h-10 w-10 text-indigo-500 mr-4"/>
-                    <span className="text-5xl font-bold text-indigo-600">{addressInfo?.nome}</span>
-                </div>
-            </div>
-            
-            <div className="mt-4 space-y-3">
-                <h3 className="font-semibold">Itens para coletar:</h3>
-                {missionsForCurrentAddress.map(mission => {
-                    const sku = skus.find(s => s.id === mission.skuId);
-                    return (
-                        <div key={mission.id} className="p-3 bg-white border rounded-lg flex justify-between items-center">
-                            <div>
-                                <p className="font-bold text-gray-900">{sku?.descritivo}</p>
-                                <p className="text-sm text-gray-600">SKU: {sku?.sku} | Lote: {etiquetas.find(e => e.id === mission.etiquetaId)?.lote}</p>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-2xl font-bold text-indigo-700">{mission.quantidade} <span className="text-base font-normal">caixas</span></p>
-                                <button
-                                    onClick={() => handleConfirmPick(mission.id)}
-                                    className="mt-1 flex items-center text-sm bg-green-500 text-white px-3 py-1 rounded-md hover:bg-green-600"
-                                >
-                                    <CheckCircleIcon className="h-4 w-4 mr-1"/> Confirmar
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
+             <div className="mt-6 space-y-3">
+                <h3 className="font-semibold text-gray-700">Lista de Coleta ({remainingMissions.length} item(s) pendente(s))</h3>
+                {addressesToVisit.map((group, index) => (
+                    <AddressPickingCard
+                        key={group.address.id}
+                        address={group.address}
+                        missions={group.missions}
+                        onCompleteMission={onCompleteMission}
+                        skus={skus}
+                        etiquetas={etiquetas}
+                        startExpanded={index === 0} // Expande o primeiro por padrão
+                    />
+                ))}
             </div>
         </div>
     );

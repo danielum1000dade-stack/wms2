@@ -87,7 +87,8 @@ interface WMSContextType {
     missoes: Missao[];
     createPickingMissions: (pedido: Pedido) => void;
     createMission: (missionData: Omit<Missao, 'id' | 'status' | 'createdAt'>) => Missao;
-    deleteMission: (missionId: string) => { success: boolean; message?: string };
+    deleteMission: (missionId: string) => void;
+    revertMission: (missionId: string) => void;
     assignNextMission: (operadorId: string) => Missao | null;
     assignFamilyMissionsToOperator: (pedidoId: string, familia: string, operadorId: string) => { success: boolean; missions?: Missao[]; message?: string };
     getMyActivePickingGroup: (operadorId: string) => Missao[] | null;
@@ -624,36 +625,38 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return newMission;
     };
     
-    const deleteMission = (missionId: string): { success: boolean, message?: string } => {
-        let missionToDelete: Missao | undefined;
-        let success = false;
-        let message = '';
-    
-        setMissoes(prevMissoes => {
-            missionToDelete = prevMissoes.find(m => m.id === missionId);
-            if (!missionToDelete) {
-                message = 'Missão não encontrada.';
-                return prevMissoes;
-            }
-            if (missionToDelete.status !== 'Pendente') {
-                message = 'Apenas missões pendentes podem ser excluídas.';
-                return prevMissoes;
-            }
-            
-            // Revert pallet status to Armazenada in a separate state update
-            setEtiquetas(prevEtiquetas => 
-                prevEtiquetas.map(etiqueta => 
-                    etiqueta.id === missionToDelete!.etiquetaId 
-                        ? { ...etiqueta, status: EtiquetaStatus.ARMAZENADA } 
-                        : etiqueta
-                )
-            );
-            
-            success = true;
-            return prevMissoes.filter(m => m.id !== missionId);
-        });
+    const deleteMission = (missionId: string) => {
+        const missionToDelete = missoes.find(m => m.id === missionId);
+
+        if (!missionToDelete) {
+            console.error(`[deleteMission] Tentativa de excluir missão não encontrada: ${missionId}`);
+            return;
+        }
+        if (missionToDelete.status !== 'Pendente') {
+             console.error(`[deleteMission] Apenas missões pendentes podem ser excluídas. Status atual: ${missionToDelete.status}`);
+             return;
+        }
+
+        setMissoes(prev => prev.filter(m => m.id !== missionId));
         
-        return { success, message };
+        // Retorna o status da etiqueta para "Armazenada"
+        setEtiquetas(prev => 
+            prev.map(etiqueta => 
+                etiqueta.id === missionToDelete.etiquetaId
+                    ? { ...etiqueta, status: EtiquetaStatus.ARMAZENADA }
+                    : etiqueta
+            )
+        );
+    };
+
+    const revertMission = (missionId: string) => {
+        setMissoes(prev => 
+            prev.map(m => 
+                m.id === missionId 
+                    ? { ...m, status: 'Pendente', operadorId: undefined }
+                    : m
+            )
+        );
     };
 
     const updateMissionStatus = (missionId: string, status: Missao['status']) => {
@@ -949,7 +952,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         recebimentos, addRecebimento, updateRecebimento,
         etiquetas, getEtiquetaById, updateEtiqueta, addEtiqueta, deleteEtiqueta, deleteEtiquetas, getEtiquetasByRecebimento, getEtiquetasPendentesApontamento, apontarEtiqueta, armazenarEtiqueta,
         pedidos, addPedidos, processTransportData, generateMissionsForPedido,
-        missoes, createPickingMissions, createMission, deleteMission, assignNextMission, updateMissionStatus, assignFamilyMissionsToOperator, getMyActivePickingGroup,
+        missoes, createPickingMissions, createMission, deleteMission, revertMission, assignNextMission, updateMissionStatus, assignFamilyMissionsToOperator, getMyActivePickingGroup,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,
