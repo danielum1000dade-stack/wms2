@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta, DivergenciaTipo, DivergenciaFonte } from '../types';
@@ -146,7 +145,7 @@ const ActivePickingView: React.FC<{
         setError('');
         switch (step) {
             case 'SCAN_ADDRESS':
-                if (inputValue.toUpperCase() === missionAddress?.codigo.toUpperCase()) {
+                if (inputValue.toUpperCase() === String(missionAddress?.codigo).toUpperCase()) {
                     setStep('SCAN_SKU');
                     setInputValue('');
                 } else {
@@ -154,7 +153,7 @@ const ActivePickingView: React.FC<{
                 }
                 break;
             case 'SCAN_SKU':
-                if (inputValue.toUpperCase() === missionSku?.sku.toUpperCase()) {
+                if (inputValue.toUpperCase() === String(missionSku?.sku).toUpperCase()) {
                     setStep('ENTER_QUANTITY');
                     setInputValue(String(currentMission.quantidade)); // Pre-fill with expected quantity
                 } else {
@@ -244,7 +243,7 @@ const ActivePickingView: React.FC<{
                     <StepIndicator title="1. ENDEREÇO DE ORIGEM" current={step === 'SCAN_ADDRESS'} done={step !== 'SCAN_ADDRESS'} value={missionAddress?.codigo} />
                     {step !== 'SCAN_ADDRESS' && (
                         <div className="animate-fade-in">
-                            <StepIndicator title="2. PRODUTO A COLETAR" current={step === 'SCAN_SKU'} done={step === 'ENTER_QUANTITY'} value={missionSku?.sku} />
+                            <StepIndicator title="2. PRODUTO A COLETAR" current={step === 'SCAN_SKU'} done={step === 'ENTER_QUANTITY'} value={String(missionSku?.sku)} />
                             {missionSku?.foto && <img src={missionSku.foto} alt={missionSku.descritivo} className="w-full h-32 object-contain my-2 bg-gray-100 rounded"/>}
                             <div className="p-3 bg-gray-50 rounded-lg">
                                 <p className="text-xl font-bold">{missionSku?.descritivo}</p>
@@ -341,7 +340,7 @@ const AvailablePickingList: React.FC<{
 
 
 const PickingPage: React.FC = () => {
-    const { missoes, pedidos, skus, enderecos, assignFamilyMissionsToOperator, getMyActivePickingGroup, updateMissionStatus, revertMission } = useWMS();
+    const { missoes, pedidos, skus, enderecos, assignFamilyMissionsToOperator, getMyActivePickingGroup, updateMissionStatus, revertMission, revertMissionGroup } = useWMS();
     const currentUserId = 'admin_user';
 
     const [myActiveGroup, setMyActiveGroup] = useState<GroupedTransport | null>(null);
@@ -392,6 +391,12 @@ const PickingPage: React.FC = () => {
             return { pedido, families };
         }).filter(item => item.pedido)
         .sort((a, b) => {
+             // 1. Ressuprimento first
+            const aHasReplenishment = a.families.some(f => f.addresses.some(ad => ad.missions.some(m => m.tipo === MissaoTipo.REABASTECIMENTO)));
+            const bHasReplenishment = b.families.some(f => f.addresses.some(ad => ad.missions.some(m => m.tipo === MissaoTipo.REABASTECIMENTO)));
+            if (aHasReplenishment && !bHasReplenishment) return -1;
+            if (!aHasReplenishment && bHasReplenishment) return 1;
+
              if (a.pedido.priority && !b.pedido.priority) return -1;
              if (!a.pedido.priority && b.pedido.priority) return 1;
              return new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime();
@@ -430,7 +435,7 @@ const PickingPage: React.FC = () => {
 
     const handleRevertGroup = (missionIds: string[]) => {
         if(window.confirm("Tem certeza que deseja estornar este grupo de missões? Elas voltarão para a fila de pendentes.")) {
-            missionIds.forEach(id => revertMission(id));
+            revertMissionGroup(missionIds);
         }
     };
 

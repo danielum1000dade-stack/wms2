@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 // FIX: Imported missing types 'InventoryCountSession' and 'InventoryCountItem' to resolve 'Cannot find name' errors throughout the component.
@@ -554,7 +553,7 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
                 const formattedDate = expectedEtiqueta.validade ? new Date(expectedEtiqueta.validade).toISOString().split('T')[0] : '';
                 setCountedValidade(formattedDate);
                 if (sku) {
-                    setCountedSkuInput(sku.sku);
+                    setCountedSkuInput(String(sku.sku));
                     setFoundCountedSku(sku);
                     setCountedSkuError('');
                 } else {
@@ -581,7 +580,7 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
             }
             return;
         }
-        const sku = skus.find(s => s.sku.toLowerCase() === countedSkuInput.toLowerCase());
+        const sku = skus.find(s => String(s.sku).toLowerCase() === countedSkuInput.toLowerCase());
         if (sku) {
             setFoundCountedSku(sku);
             setCountedSkuError('');
