@@ -6,10 +6,15 @@ import { CameraIcon, CheckCircleIcon, LightBulbIcon, MapPinIcon, XCircleIcon } f
 
 declare const Html5QrcodeScanner: any;
 
+interface SuggestedEndereco {
+    endereco: Endereco;
+    motivo: string;
+}
+
 interface ActionPanelProps {
     selectedEtiqueta: Etiqueta | null;
     skus: SKU[];
-    suggestedEndereco: Endereco | null;
+    suggestedEndereco: SuggestedEndereco | null;
     finalEndereco: Endereco | null;
     setFinalEndereco: React.Dispatch<React.SetStateAction<Endereco | null>>;
     manualAddressInput: string;
@@ -78,11 +83,12 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
             </div>
             
             <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg">
-                <h4 className="font-semibold flex items-center text-yellow-800"><LightBulbIcon className="h-5 w-5 mr-2"/> Endereço Sugerido</h4>
+                <h4 className="font-semibold flex items-center text-yellow-800"><LightBulbIcon className="h-5 w-5 mr-2"/> Endereço Sugerido (IA Explicável)</h4>
                 {suggestedEndereco ? (
                     <>
-                        <p className="text-xl font-bold text-gray-800 my-2">{suggestedEndereco.nome}</p>
-                        <button onClick={() => setFinalEndereco(suggestedEndereco)} className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-md hover:bg-yellow-500">
+                        <p className="text-xl font-bold text-gray-800 my-2">{suggestedEndereco.endereco.nome}</p>
+                        <p className="text-xs text-yellow-700 italic mb-2">Motivo: {suggestedEndereco.motivo}</p>
+                        <button onClick={() => setFinalEndereco(suggestedEndereco.endereco)} className="w-full bg-yellow-400 text-yellow-900 font-bold py-2 px-4 rounded-md hover:bg-yellow-500">
                             Usar Sugestão
                         </button>
                     </>
@@ -133,7 +139,7 @@ const ArmazenagemPage: React.FC = () => {
     
     const [palletsParaArmazenar, setPalletsParaArmazenar] = useState<Etiqueta[]>([]);
     const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
-    const [suggestedEndereco, setSuggestedEndereco] = useState<Endereco | null>(null);
+    const [suggestedEndereco, setSuggestedEndereco] = useState<SuggestedEndereco | null>(null);
     const [manualAddressInput, setManualAddressInput] = useState('');
     const [finalEndereco, setFinalEndereco] = useState<Endereco | null>(null);
     
@@ -151,41 +157,59 @@ const ArmazenagemPage: React.FC = () => {
         setPalletsParaArmazenar(etiquetas.filter(e => e.status === EtiquetaStatus.APONTADA));
     }, [etiquetas]);
 
-    const findSuggestedAddress = (sku: SKU): Endereco | null => {
+    const findSuggestedAddress = (sku: SKU): SuggestedEndereco | null => {
         const enderecosDisponiveis = enderecos.filter(e => 
             e.status === EnderecoStatus.LIVRE && 
             e.tipo === EnderecoTipo.ARMAZENAGEM
         );
-
+    
         if (enderecosDisponiveis.length === 0) return null;
-
+    
         const skuSres = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean);
-        
-        if (skuSres.length > 0) {
-            const enderecosCompativeis = enderecosDisponiveis.filter(e => {
-                const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
-                if (endSres.length === 0) return false;
-                return skuSres.some(sre => endSres.includes(sre));
-            });
-            if (enderecosCompativeis.length > 0) {
-                return enderecosCompativeis[0];
+    
+        let bestMatch: { endereco: Endereco, score: number, motivo: string } | null = null;
+    
+        for (const endereco of enderecosDisponiveis) {
+            let score = 0;
+            let motivo = '';
+    
+            // SRE Matching (high priority)
+            const endSres = [endereco.sre1, endereco.sre2, endereco.sre3, endereco.sre4, endereco.sre5].filter(Boolean);
+            const sreMatch = skuSres.some(sre => endSres.includes(sre));
+            if (sreMatch) {
+                score += 1000;
+                motivo = 'Compatível com as regras de armazenagem (SRE).';
+            } else if (endSres.length > 0) {
+                continue; // Skip if address has SREs but none match
+            }
+    
+            // Affinity Score (proximity to same SKU)
+            // This is a simple simulation. A real implementation would check neighbors.
+            const hasSameSkuNearby = etiquetas.some(et => 
+                et.skuId === sku.id && 
+                et.enderecoId && 
+                enderecos.find(e => e.id === et.enderecoId)?.codigo.startsWith(endereco.codigo.substring(0, 3))
+            );
+            if (hasSameSkuNearby) {
+                score += 100;
+                motivo += ' Próximo a outros pallets da mesma família.';
+            }
+            
+            // Proximity to Expedition (ABC proxy)
+            // Lower 'A' numbers are closer
+            const corredorCode = endereco.codigo.charCodeAt(0);
+            score -= corredorCode; // 'A' (65) will have a higher score than 'Z' (90)
+            
+            if (!motivo) {
+                 motivo = 'Posição genérica disponível.';
+            }
+
+            if (!bestMatch || score > bestMatch.score) {
+                bestMatch = { endereco, score, motivo: motivo.trim() };
             }
         }
         
-        const enderecosGenericos = enderecosDisponiveis.filter(e => {
-            const endSres = [e.sre1, e.sre2, e.sre3, e.sre4, e.sre5].filter(Boolean);
-            return endSres.length === 0;
-        });
-
-        if (enderecosGenericos.length > 0) {
-            return enderecosGenericos[0];
-        }
-
-        if (skuSres.length === 0) {
-            return enderecosDisponiveis[0];
-        }
-        
-        return null;
+        return bestMatch ? { endereco: bestMatch.endereco, motivo: bestMatch.motivo } : null;
     };
 
     const handleSelectEtiqueta = (etiqueta: Etiqueta) => {

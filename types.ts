@@ -23,6 +23,7 @@ export interface SKU {
   industriaId?: string;
   status: SKUStatus;
   motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
+  classificacaoABC?: 'A' | 'B' | 'C';
 }
 
 export interface Industria {
@@ -130,8 +131,9 @@ export interface Pedido {
     id: string;
     numeroTransporte: string;
     items: PedidoItem[];
-    status: 'Pendente' | 'Em Separação' | 'Separado' | 'Conferido' | 'Expedido';
+    status: 'Pendente' | 'Em Separação' | 'Separado' | 'Em Conferência' | 'Conferido' | 'Expedido';
     createdAt: string;
+    priority: boolean;
 }
 
 export enum MissaoTipo {
@@ -140,7 +142,6 @@ export enum MissaoTipo {
     MOVIMENTACAO = 'Movimentação',
     MOVIMENTACAO_PALLET = 'Movimentação de Pallet',
     TRANSFERENCIA = 'Transferência',
-    CONFERENCIA = 'Conferência',
 }
 
 export interface Missao {
@@ -155,6 +156,8 @@ export interface Missao {
     status: 'Pendente' | 'Atribuída' | 'Em Andamento' | 'Concluída';
     operadorId?: string;
     createdAt: string;
+    startedAt?: string;
+    finishedAt?: string;
 }
 
 export interface PalletConsolidado {
@@ -179,6 +182,46 @@ export interface Divergencia {
     quantidade: number;
     observacao?: string;
 }
+
+
+// Tipos para o módulo de Conferência Cega
+export enum ConferenciaErroTipo {
+  FALTA = 'Falta',
+  SOBRA = 'Sobra',
+  PRODUTO_DIVERGENTE = 'Produto Divergente',
+  UNIDADE_INCORRETA = 'Unidade Incorreta'
+}
+
+export interface Conferencia {
+  id: string;
+  pedidoId: string;
+  conferenteId: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'Em Andamento' | 'Concluída';
+}
+
+export interface ConferenciaItem {
+  id: string;
+  conferenciaId: string;
+  skuId: string;
+  lote: string;
+  quantidadeContada: number;
+}
+
+export interface ConferenciaErro {
+  id: string;
+  conferenciaId: string;
+  pedidoId: string;
+  skuId: string;
+  lote?: string;
+  tipo: ConferenciaErroTipo;
+  quantidadeDivergente: number;
+  observacao?: string;
+  conferenteId: string;
+  createdAt: string;
+}
+
 
 // Inventory Count Types
 export interface InventoryCountSession {

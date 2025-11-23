@@ -15,6 +15,7 @@ const ApontamentoPage: React.FC = () => {
     const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [warning, setWarning] = useState('');
     const [isScanning, setIsScanning] = useState(false);
     const scannerRef = useRef<any>(null);
 
@@ -59,6 +60,7 @@ const ApontamentoPage: React.FC = () => {
         setEtiquetaId(id);
         setError('');
         setSuccess('');
+        setWarning('');
         const etiqueta = getEtiquetaById(id);
         if (etiqueta && etiqueta.status === EtiquetaStatus.PENDENTE_APONTAMENTO) {
             setSelectedEtiqueta(etiqueta);
@@ -75,6 +77,10 @@ const ApontamentoPage: React.FC = () => {
     
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
+        setSuccess('');
+        setWarning('');
+
         if (!selectedEtiqueta) {
             setError('Nenhuma etiqueta válida selecionada.');
             return;
@@ -83,19 +89,28 @@ const ApontamentoPage: React.FC = () => {
             setError('SKU inválido ou não selecionado.');
             return;
         }
-        apontarEtiqueta(selectedEtiqueta.id, {
+        
+        const result = apontarEtiqueta(selectedEtiqueta.id, {
             ...formData,
             skuId: formData.skuId,
             quantidadeCaixas: parseInt(formData.quantidadeCaixas, 10)
         });
-        setSuccess(`Etiqueta ${selectedEtiqueta.id} apontada com sucesso!`);
-        // Reset form
-        setEtiquetaId('');
-        setSelectedEtiqueta(null);
-        setFormData({ skuId: '', quantidadeCaixas: '', lote: '', validade: '', observacoes: '' });
-        setSkuInput('');
-        setFoundSku(null);
-        setSkuError('');
+
+        if (result.success) {
+            setSuccess(`Etiqueta ${selectedEtiqueta.id} apontada com sucesso!`);
+            if (result.warnings && result.warnings.length > 0) {
+                setWarning(result.warnings.join('\n'));
+            }
+            // Reset form
+            setEtiquetaId('');
+            setSelectedEtiqueta(null);
+            setFormData({ skuId: '', quantidadeCaixas: '', lote: '', validade: '', observacoes: '' });
+            setSkuInput('');
+            setFoundSku(null);
+            setSkuError('');
+        } else {
+            setError(result.message || 'Ocorreu um erro desconhecido.');
+        }
     };
 
     const handleSkuInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,6 +157,8 @@ const ApontamentoPage: React.FC = () => {
                     
                     {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">{error}</div>}
                     {success && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">{success}</div>}
+                    {warning && <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded relative mb-4" role="alert">{warning}</div>}
+
 
                     <div className="mb-4">
                         <label className="block text-sm font-medium text-gray-700">Código da Etiqueta</label>
@@ -187,7 +204,7 @@ const ApontamentoPage: React.FC = () => {
                                 />
                                 {foundSku && (
                                     <p className="text-sm text-green-700 mt-1">
-                                        ✓ Produto encontrado: <strong>{foundSku.descritivo}</strong>
+                                        ✓ Produto encontrado: <strong>{foundSku.descritivo}</strong> (Pallet com {foundSku.totalCaixas} cx)
                                     </p>
                                 )}
                                 {skuError && (

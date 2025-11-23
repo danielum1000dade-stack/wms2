@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta } from '../types';
@@ -152,7 +153,7 @@ const AvailablePickingList: React.FC<{
                 </div>
             ) : (
                 availableGroups.map(group => (
-                    <div key={group.pedido.id} className="bg-white rounded-lg shadow-md">
+                    <div key={group.pedido.id} className={`bg-white rounded-lg shadow-md ${group.pedido.priority ? 'border-2 border-yellow-400' : ''}`}>
                         <button
                             onClick={() => setExpandedTransport(expandedTransport === group.pedido.id ? null : group.pedido.id)}
                             className="w-full flex justify-between items-center p-4 text-left"
@@ -160,6 +161,7 @@ const AvailablePickingList: React.FC<{
                             <div className="flex items-center">
                                 <ClipboardDocumentListIcon className="h-6 w-6 text-indigo-600 mr-3"/>
                                 <span className="font-bold text-lg text-gray-800">Transporte: {group.pedido.numeroTransporte}</span>
+                                {group.pedido.priority && <span className="ml-3 px-2 py-0.5 text-xs font-semibold rounded-full bg-yellow-200 text-yellow-800">PRIORITÁRIO</span>}
                             </div>
                             {expandedTransport === group.pedido.id ? <ChevronDownIcon className="h-6 w-6"/> : <ChevronRightIcon className="h-6 w-6"/>}
                         </button>
@@ -240,7 +242,12 @@ const PickingPage: React.FC = () => {
             });
 
             return { pedido, families };
-        }).filter(item => item.pedido); // Garante que o pedido foi encontrado
+        }).filter(item => item.pedido) // Garante que o pedido foi encontrado
+        .sort((a, b) => { // Sort transports by priority then date
+             if (a.pedido.priority && !b.pedido.priority) return -1;
+             if (!a.pedido.priority && b.pedido.priority) return 1;
+             return new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime();
+        });
     };
     
     // Recalcula grupos disponíveis e meu grupo ativo quando as missões mudam
@@ -257,8 +264,9 @@ const PickingPage: React.FC = () => {
 
     const availableGroups = useMemo(() => {
         const pendingMissions = missoes.filter(m =>
-            m.tipo === MissaoTipo.PICKING && m.status === 'Pendente'
+            (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.MOVIMENTACAO_PALLET) && m.status === 'Pendente'
         );
+         // The sorting is now handled inside groupAndSortMissions
         return groupAndSortMissions(pendingMissions);
     }, [missoes, pedidos, skus, enderecos]);
     
@@ -268,7 +276,7 @@ const PickingPage: React.FC = () => {
     };
 
     const handleCompleteMission = (missionId: string) => {
-        updateMissionStatus(missionId, 'Concluída');
+        updateMissionStatus(missionId, 'Concluída', currentUserId);
     };
 
     const handleFinishGroup = () => {

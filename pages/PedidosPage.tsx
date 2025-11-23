@@ -3,7 +3,9 @@ import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Pedido } from '../types';
 import ImportExcelModal from '../components/ImportExcelModal';
-import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon, StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
+import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline';
+
 
 // FIX: Defined ColumnConfig interface locally to ensure type safety for excel import configurations.
 interface ColumnConfig {
@@ -15,7 +17,7 @@ interface ColumnConfig {
 }
 
 const PedidosPage: React.FC = () => {
-    const { pedidos, processTransportData, generateMissionsForPedido } = useWMS();
+    const { pedidos, processTransportData, generateMissionsForPedido, updatePedido } = useWMS();
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
@@ -79,6 +81,7 @@ const PedidosPage: React.FC = () => {
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
                             <tr>
+                                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Prioridade</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nº Transporte</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Itens</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data Importação</th>
@@ -88,7 +91,12 @@ const PedidosPage: React.FC = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                             {pedidos.length > 0 ? pedidos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(pedido => (
-                                <tr key={pedido.id}>
+                                <tr key={pedido.id} className={pedido.priority ? 'bg-yellow-50' : ''}>
+                                    <td className="px-3 py-4 whitespace-nowrap text-center">
+                                        <button onClick={() => updatePedido(pedido.id, !pedido.priority)} title="Marcar como prioritário">
+                                            {pedido.priority ? <StarSolidIcon className="h-6 w-6 text-yellow-500"/> : <StarOutlineIcon className="h-6 w-6 text-gray-400 hover:text-yellow-500"/>}
+                                        </button>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{pedido.numeroTransporte}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pedido.items.length}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(pedido.createdAt).toLocaleString()}</td>
@@ -110,7 +118,7 @@ const PedidosPage: React.FC = () => {
                                 </tr>
                             )) : (
                                 <tr>
-                                    <td colSpan={5} className="text-center py-10 text-gray-500">
+                                    <td colSpan={6} className="text-center py-10 text-gray-500">
                                         <CubeIcon className="mx-auto h-12 w-12 text-gray-400"/>
                                         <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum pedido encontrado</h3>
                                         <p className="mt-1 text-sm text-gray-500">

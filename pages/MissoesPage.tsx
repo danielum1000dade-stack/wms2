@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo } from '../types';
@@ -97,7 +98,7 @@ const MissionCard: React.FC<{
 type MissionFilter = 'todas' | MissaoTipo;
 
 const MissoesPage: React.FC = () => {
-    const { missoes, deleteMission, assignNextMission, updateMissionStatus, revertMission } = useWMS();
+    const { missoes, pedidos, deleteMission, assignNextMission, updateMissionStatus, revertMission } = useWMS();
     const [feedback, setFeedback] = useState('');
     const [activeTab, setActiveTab] = useState<MissionFilter>('todas');
 
@@ -107,15 +108,26 @@ const MissoesPage: React.FC = () => {
         const filteredMissions = missoes.filter(m => activeTab === 'todas' || m.tipo === activeTab);
         
         const myMission = filteredMissions.find(m => m.operadorId === currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento')) || null;
-        const pending = filteredMissions.filter(m => m.status === 'Pendente');
+        
+        const pending = filteredMissions.filter(m => m.status === 'Pendente').sort((a, b) => {
+            // 1. Ressuprimento first
+            if (a.tipo === MissaoTipo.REABASTECIMENTO && b.tipo !== MissaoTipo.REABASTECIMENTO) return -1;
+            if (a.tipo !== MissaoTipo.REABASTECIMENTO && b.tipo === MissaoTipo.REABASTECIMENTO) return 1;
+
+            // 2. Priority Orders
+            const pedidoA = pedidos.find(p => p.id === a.pedidoId);
+            const pedidoB = pedidos.find(p => p.id === b.pedidoId);
+            if (pedidoA?.priority && !pedidoB?.priority) return -1;
+            if (!pedidoA?.priority && pedidoB?.priority) return 1;
+
+            // 3. FIFO
+            return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
         const otherActive = filteredMissions.filter(m => m.operadorId !== currentUserId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
         
-        return {
-            myCurrentMission: myMission,
-            pendingMissions: pending.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()),
-            otherActiveMissions: otherActive
-        };
-    }, [missoes, currentUserId, activeTab]);
+        return { myCurrentMission: myMission, pendingMissions: pending, otherActiveMissions: otherActive };
+    }, [missoes, pedidos, currentUserId, activeTab]);
     
     const handleAssignNext = () => {
         setFeedback('');
@@ -130,7 +142,7 @@ const MissoesPage: React.FC = () => {
     };
     
     const handleUpdateStatus = (missionId: string, newStatus: Missao['status']) => {
-        updateMissionStatus(missionId, newStatus);
+        updateMissionStatus(missionId, newStatus, currentUserId);
         if (newStatus === 'Concluída') {
              setFeedback(`Missão ${missionId} concluída! Você está livre para a próxima.`);
              setTimeout(() => setFeedback(''), 3000);
@@ -180,7 +192,6 @@ const MissoesPage: React.FC = () => {
                     <TabButton tabName={MissaoTipo.MOVIMENTACAO_PALLET} label="Mov. Pallet"/>
                     <TabButton tabName={MissaoTipo.REABASTECIMENTO} label="Ressuprimento"/>
                     <TabButton tabName={MissaoTipo.PICKING} label="Picking"/>
-                    <TabButton tabName={MissaoTipo.CONFERENCIA} label="Conferência"/>
                 </div>
             </div>
 

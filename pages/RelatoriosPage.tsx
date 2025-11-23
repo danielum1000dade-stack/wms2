@@ -1,20 +1,21 @@
 
 import React, { useState, useMemo } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { ArchiveBoxIcon, PrinterIcon, TableCellsIcon } from '@heroicons/react/24/outline';
+import { ArchiveBoxIcon, PrinterIcon, TableCellsIcon, DocumentChartBarIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 import RomaneioDescarga from '../components/RomaneioDescarga';
-import { Recebimento, EtiquetaStatus } from '../types';
+import { Recebimento, EtiquetaStatus, ConferenciaErro, Missao } from '../types';
 
 declare const XLSX: any;
 
 const RelatoriosPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('entradas');
 
-    const TabButton: React.FC<{ tabName: string; label: string }> = ({ tabName, label }) => (
+    const TabButton: React.FC<{ tabName: string; label: string, icon: React.ElementType }> = ({ tabName, label, icon: Icon }) => (
         <button
             onClick={() => setActiveTab(tabName)}
-            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${activeTab === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${activeTab === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
         >
+            <Icon className="h-5 w-5 mr-2" />
             {label}
         </button>
     );
@@ -23,17 +24,21 @@ const RelatoriosPage: React.FC = () => {
         <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
-                <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2">
-                    <TabButton tabName="entradas" label="Relatório de Entradas" />
-                    <TabButton tabName="romaneio" label="Romaneio de Descarga" />
-                    <TabButton tabName="inventario" label="Inventário Consolidado" />
-                    <TabButton tabName="posicao" label="Posição de Estoque" />
+                <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
+                    <TabButton tabName="entradas" label="Entradas" icon={PrinterIcon} />
+                    <TabButton tabName="romaneio" label="Romaneio" icon={PrinterIcon} />
+                    <TabButton tabName="inventario" label="Inventário" icon={ArchiveBoxIcon}/>
+                    <TabButton tabName="posicao" label="Posição de Estoque" icon={TableCellsIcon} />
+                    <TabButton tabName="erros" label="Erros de Conferência" icon={ExclamationTriangleIcon} />
+                    <TabButton tabName="produtividade" label="Produtividade" icon={DocumentChartBarIcon} />
                 </div>
                 <div>
                     {activeTab === 'entradas' && <RelatorioEntradas />}
                     {activeTab === 'romaneio' && <RelatorioRomaneio />}
                     {activeTab === 'inventario' && <RelatorioInventarioConsolidado />}
                     {activeTab === 'posicao' && <RelatorioPosicaoEstoque />}
+                    {activeTab === 'erros' && <RelatorioErrosConferencia />}
+                    {activeTab === 'produtividade' && <RelatorioProdutividadeOperador />}
                 </div>
             </div>
         </div>
@@ -503,6 +508,138 @@ const RelatorioPosicaoEstoque: React.FC = () => {
                     </tbody>
                 </table>
             </div>
+        </div>
+    );
+};
+
+
+const RelatorioErrosConferencia: React.FC = () => {
+    const { conferenciaErros, users, skus, pedidos } = useWMS();
+    
+    // Simple component, no filters for now.
+    const sortedErrors = useMemo(() => 
+        [...conferenciaErros].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), 
+    [conferenciaErros]);
+
+    return (
+        <div className="space-y-4">
+             <h2 className="text-xl font-bold text-gray-800">Relatório de Erros de Conferência</h2>
+             <div className="overflow-x-auto bg-white rounded-lg shadow-md">
+                 <table className="min-w-full divide-y divide-gray-200">
+                     <thead className="bg-gray-50">
+                         <tr>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conferente</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pedido</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo de Erro</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Observação</th>
+                         </tr>
+                     </thead>
+                     <tbody className="bg-white divide-y divide-gray-200">
+                         {sortedErrors.length > 0 ? sortedErrors.map(erro => {
+                             const conferente = users.find(u => u.id === erro.conferenteId);
+                             const sku = skus.find(s => s.id === erro.skuId);
+                             const pedido = pedidos.find(p => p.id === erro.pedidoId);
+                             return (
+                                <tr key={erro.id} className="bg-red-50">
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{new Date(erro.createdAt).toLocaleString()}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{conferente?.fullName}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{pedido?.numeroTransporte}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold">{erro.tipo}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{sku?.sku} - {sku?.descritivo}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">{erro.quantidadeDivergente}</td>
+                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{erro.observacao}</td>
+                                </tr>
+                             )
+                         }) : (
+                            <tr>
+                                <td colSpan={7} className="text-center py-10 text-gray-500">
+                                    Nenhum erro de conferência registrado.
+                                </td>
+                            </tr>
+                         )}
+                     </tbody>
+                 </table>
+             </div>
+        </div>
+    );
+};
+
+const RelatorioProdutividadeOperador: React.FC = () => {
+    const { missoes, users } = useWMS();
+
+    const productivityData = useMemo(() => {
+        const completedMissions = missoes.filter(m => m.status === 'Concluída' && m.startedAt && m.finishedAt && m.operadorId);
+
+        const dataByUser = completedMissions.reduce((acc, mission) => {
+            const operatorId = mission.operadorId!;
+            if (!acc[operatorId]) {
+                acc[operatorId] = { totalMissions: 0, totalTimeMs: 0 };
+            }
+
+            const startTime = new Date(mission.startedAt!).getTime();
+            const finishTime = new Date(mission.finishedAt!).getTime();
+            const duration = finishTime - startTime;
+
+            acc[operatorId].totalMissions += 1;
+            acc[operatorId].totalTimeMs += duration;
+
+            return acc;
+        }, {} as Record<string, { totalMissions: number, totalTimeMs: number }>);
+
+        return Object.entries(dataByUser).map(([operadorId, data]) => {
+            const user = users.find(u => u.id === operadorId);
+            const avgTimeMs = data.totalTimeMs / data.totalMissions;
+            return {
+                operadorId,
+                operadorName: user?.fullName || 'Desconhecido',
+                totalMissions: data.totalMissions,
+                avgTimeMs
+            };
+        }).sort((a,b) => a.avgTimeMs - b.avgTimeMs); // Rank by fastest average time
+
+    }, [missoes, users]);
+
+    const formatDuration = (ms: number) => {
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}m ${remainingSeconds}s`;
+    }
+
+    return (
+        <div className="space-y-4">
+             <h2 className="text-xl font-bold text-gray-800">Ranking de Produtividade por Operador</h2>
+              <div className="overflow-x-auto bg-white rounded-lg shadow-md">
+                 <table className="min-w-full divide-y divide-gray-200">
+                     <thead className="bg-gray-50">
+                         <tr>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ranking</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Operador</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total de Missões</th>
+                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tempo Médio por Missão</th>
+                         </tr>
+                     </thead>
+                     <tbody className="bg-white divide-y divide-gray-200">
+                        {productivityData.length > 0 ? productivityData.map((data, index) => (
+                            <tr key={data.operadorId}>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">{index + 1}º</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm">{data.operadorName}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm">{data.totalMissions}</td>
+                                <td className="px-4 py-4 whitespace-nowrap text-sm">{formatDuration(data.avgTimeMs)}</td>
+                            </tr>
+                        )) : (
+                             <tr>
+                                <td colSpan={4} className="text-center py-10 text-gray-500">
+                                    Nenhuma missão concluída para gerar o relatório.
+                                </td>
+                            </tr>
+                        )}
+                     </tbody>
+                 </table>
+             </div>
         </div>
     );
 };
