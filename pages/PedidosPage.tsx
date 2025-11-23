@@ -20,6 +20,8 @@ const PedidosPage: React.FC = () => {
     const { pedidos, processTransportData, generateMissionsForPedido, updatePedido, reabrirSeparacao } = useWMS();
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+    const [reopenModalState, setReopenModalState] = useState<{ isOpen: boolean, pedido: Pedido | null }>({ isOpen: false, pedido: null });
+    const [reopenReason, setReopenReason] = useState('');
 
     const handleImport = (data: any[]) => {
         const result = processTransportData(data);
@@ -33,13 +35,22 @@ const PedidosPage: React.FC = () => {
         setTimeout(() => setFeedback(null), 5000);
     }
     
-    const handleReabrirSeparacao = (pedido: Pedido) => {
-        if(window.confirm(`Tem certeza que deseja refazer a separação para o transporte ${pedido.numeroTransporte}? Todas as missões geradas serão excluídas e o pedido voltará para o status "Pendente".`)) {
-            const result = reabrirSeparacao(pedido.id);
-            setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
-            setTimeout(() => setFeedback(null), 5000);
+    const handleOpenReopenModal = (pedido: Pedido) => {
+        setReopenReason('');
+        setReopenModalState({ isOpen: true, pedido });
+    };
+
+    const handleConfirmReopen = () => {
+        if (!reopenModalState.pedido) return;
+        if (!reopenReason.trim()) {
+            alert("O motivo é obrigatório.");
+            return;
         }
-    }
+        const result = reabrirSeparacao(reopenModalState.pedido.id, reopenReason);
+        setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
+        setReopenModalState({ isOpen: false, pedido: null });
+        setTimeout(() => setFeedback(null), 5000);
+    };
 
 
     // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
@@ -133,7 +144,7 @@ const PedidosPage: React.FC = () => {
                                         )}
                                         {canReabrir(pedido.status) && (
                                              <button
-                                                onClick={() => handleReabrirSeparacao(pedido)}
+                                                onClick={() => handleOpenReopenModal(pedido)}
                                                 className="flex items-center gap-1 text-red-600 hover:text-red-900"
                                                 title="Reabrir o pedido, excluindo as missões geradas e retornando-o para 'Pendente'"
                                             >
@@ -165,6 +176,32 @@ const PedidosPage: React.FC = () => {
                     onImport={handleImport}
                     onClose={() => setIsImportModalOpen(false)}
                 />
+            )}
+
+            {reopenModalState.isOpen && reopenModalState.pedido && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+                        <h3 className="text-lg font-medium leading-6 text-gray-900 mb-2">Refazer Separação</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                            Você está prestes a reabrir o pedido <span className="font-bold">{reopenModalState.pedido.numeroTransporte}</span>.
+                            Por favor, informe o motivo.
+                        </p>
+                        <div>
+                            <label htmlFor="reopen-reason" className="block text-sm font-medium text-gray-700">Motivo (Obrigatório)</label>
+                            <textarea
+                                id="reopen-reason"
+                                value={reopenReason}
+                                onChange={(e) => setReopenReason(e.target.value)}
+                                rows={3}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                            />
+                        </div>
+                        <div className="flex justify-end space-x-2 pt-4 mt-4 border-t">
+                            <button type="button" onClick={() => setReopenModalState({ isOpen: false, pedido: null })} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
+                            <button type="button" onClick={handleConfirmReopen} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Confirmar Reabertura</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

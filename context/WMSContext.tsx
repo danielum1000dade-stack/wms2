@@ -88,7 +88,7 @@ interface WMSContextType {
     pedidos: Pedido[];
     addPedidos: (pedidos: Pedido[]) => void;
     updatePedido: (pedidoId: string, priority: boolean) => void;
-    reabrirSeparacao: (pedidoId: string) => { success: boolean, message: string };
+    reabrirSeparacao: (pedidoId: string, motivo: string) => { success: boolean, message: string };
     processTransportData: (transportData: any[]) => { success: boolean; message: string; };
     generateMissionsForPedido: (pedidoId: string) => { success: boolean; message: string; };
     missoes: Missao[];
@@ -451,14 +451,21 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, priority } : p));
     };
 
-    const reabrirSeparacao = (pedidoId: string) => {
+    const reabrirSeparacao = (pedidoId: string, motivo: string) => {
         const pedido = pedidos.find(p => p.id === pedidoId);
         if (!pedido) return { success: false, message: "Pedido não encontrado." };
+
+        if (!motivo || motivo.trim() === '') {
+            return { success: false, message: "O motivo para reabertura é obrigatório." };
+        }
 
         const statusesPermitidos: Pedido['status'][] = ['Separado', 'Em Conferência', 'Conferência Parcial', 'Conferido', 'Aguardando Ressuprimento'];
         if (!statusesPermitidos.includes(pedido.status)) {
             return { success: false, message: `Não é possível reabrir um pedido com status "${pedido.status}".` };
         }
+
+        // Simular log de auditoria
+        console.log(`AUDIT: Usuário 'admin_user' reabriu o pedido ${pedido.numeroTransporte} em ${new Date().toISOString()}. Motivo: ${motivo}`);
 
         const missoesDoPedido = missoes.filter(m => m.pedidoId === pedidoId && (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO));
         if (missoesDoPedido.length === 0) {
@@ -477,7 +484,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         // Reverter status do pedido
         setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, status: 'Pendente' } : p));
 
-        return { success: true, message: `Separação do pedido ${pedido.numeroTransporte} reaberta. As missões foram excluídas e o pedido voltou ao status 'Pendente'.` };
+        return { success: true, message: `Separação do pedido ${pedido.numeroTransporte} reaberta. Motivo: ${motivo}.` };
     };
 
 
@@ -1076,22 +1083,13 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (!conferencia || !pedido) return { message: "Conferência ou Pedido não encontrado." };
 
         let hasMismatch = false;
-        let replenishmentMissionsCreated = 0;
+        let replenishmentMissionsCreated: string[] = [];
         let replenishmentNeededButNoStock = 0;
         const newErrors: ConferenciaErro[] = [];
         
-        const checkAvailableStock = (skuId: string, lote: string, quantityNeeded: number): boolean => {
-             let availableQty = 0;
-             const etiquetasDisponiveis = etiquetas.filter(e =>
-                e.skuId === skuId &&
-                e.lote === lote &&
-                e.status === EtiquetaStatus.ARMAZENADA &&
-                !e.isBlocked
-            );
-            for (const etiqueta of etiquetasDisponiveis) {
-                availableQty += etiqueta.quantidadeCaixas || 0;
-            }
-            return availableQty >= quantityNeeded;
+        const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.ANTECAMARA);
+        if (!antechamber) {
+            console.error("Configuração de erro: Nenhum endereço 'Antecâmara' encontrado para ser o destino do ressuprimento.");
         }
 
         for(const pedidoItem of pedido.items) {
@@ -1109,38 +1107,55 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const missingQty = Math.abs(difference);
                 const reason = confirmed?.reason || ConferenciaErroTipo.FALTA;
 
-                if (checkAvailableStock(sku.id, pedidoItem.lote, missingQty)) {
-                    // Create replenishment mission
-                    generateMissionsForPedido(pedido.id); // This is complex, simplified for now
-                    replenishmentMissionsCreated++;
+                let quantidadePendente = missingQty;
+                
+                const etiquetasDisponiveis = etiquetas.filter(e =>
+                    e.skuId === sku.id &&
+                    e.lote === pedidoItem.lote &&
+                    e.status === EtiquetaStatus.ARMAZENADA &&
+                    !e.isBlocked
+                ).sort((a, b) => { // FEFO Sort
+                    const dateA = a.validade ? new Date(a.validade).getTime() : 0;
+                    const dateB = b.validade ? new Date(b.validade).getTime() : 0;
+                    return dateA - dateB; 
+                });
+
+                if (etiquetasDisponiveis.length > 0 && antechamber) {
+                    const stockAvailable = etiquetasDisponiveis.reduce((sum, et) => sum + (et.quantidadeCaixas || 0), 0);
+
+                    if (stockAvailable >= quantidadePendente) {
+                        for (const etiqueta of etiquetasDisponiveis) {
+                            if (quantidadePendente <= 0) break;
+                            if (!etiqueta.enderecoId) continue;
+
+                            const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
+                            const quantidadeRetirar = Math.min(quantidadePendente, quantidadeNoPallet);
+
+                            if (quantidadeRetirar > 0) {
+                                const newMission = createMission({
+                                    tipo: MissaoTipo.REABASTECIMENTO,
+                                    pedidoId: pedido.id,
+                                    etiquetaId: etiqueta.id,
+                                    skuId: sku.id,
+                                    quantidade: quantidadeRetirar,
+                                    origemId: etiqueta.enderecoId,
+                                    destinoId: antechamber.id,
+                                });
+                                replenishmentMissionsCreated.push(newMission.id);
+                                quantidadePendente -= quantidadeRetirar;
+                            }
+                        }
+                    } else {
+                        replenishmentNeededButNoStock++;
+                        newErrors.push({ id: generateId(), conferenciaId, pedidoId: pedido.id, skuId: sku.id, lote: pedidoItem.lote, tipo: reason, quantidadeDivergente: missingQty, conferenteId: conferencia.conferenteId, createdAt: new Date().toISOString(), observacao: "Sem estoque para ressuprimento." });
+                    }
                 } else {
                     replenishmentNeededButNoStock++;
-                    newErrors.push({
-                        id: generateId(),
-                        conferenciaId,
-                        pedidoId: pedido.id,
-                        skuId: sku.id,
-                        lote: pedidoItem.lote,
-                        tipo: reason,
-                        quantidadeDivergente: missingQty,
-                        conferenteId: conferencia.conferenteId,
-                        createdAt: new Date().toISOString(),
-                        observacao: "Sem estoque para ressuprimento."
-                    });
+                    newErrors.push({ id: generateId(), conferenciaId, pedidoId: pedido.id, skuId: sku.id, lote: pedidoItem.lote, tipo: reason, quantidadeDivergente: missingQty, conferenteId: conferencia.conferenteId, createdAt: new Date().toISOString(), observacao: "Sem estoque para ressuprimento." });
                 }
             } else if (difference > 0) { // Sobra
                 hasMismatch = true;
-                newErrors.push({
-                    id: generateId(),
-                    conferenciaId,
-                    pedidoId: pedido.id,
-                    skuId: sku.id,
-                    lote: pedidoItem.lote,
-                    tipo: ConferenciaErroTipo.SOBRA,
-                    quantidadeDivergente: difference,
-                    conferenteId: conferencia.conferenteId,
-                    createdAt: new Date().toISOString()
-                });
+                newErrors.push({ id: generateId(), conferenciaId, pedidoId: pedido.id, skuId: sku.id, lote: pedidoItem.lote, tipo: ConferenciaErroTipo.SOBRA, quantidadeDivergente: difference, conferenteId: conferencia.conferenteId, createdAt: new Date().toISOString() });
             }
         };
 
@@ -1151,12 +1166,12 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         let finalStatus: Pedido['status'] = 'Conferido';
         let message = `Conferência do pedido ${pedido.numeroTransporte} finalizada.`;
 
-        if (replenishmentMissionsCreated > 0) {
+        if (replenishmentMissionsCreated.length > 0) {
             finalStatus = 'Aguardando Ressuprimento';
-            message += ` ${replenishmentMissionsCreated} missões de ressuprimento foram criadas.`;
+            message = `Saldo em estoque localizado. ${replenishmentMissionsCreated.length} missão(ões) de ressuprimento criada(s) com prioridade (IDs: ${replenishmentMissionsCreated.join(', ')}). O pedido aguardará a chegada do(s) item(ns).`;
         } else if (hasMismatch) {
             finalStatus = 'Conferência Parcial';
-             message += ` Foram encontradas ${newErrors.length} divergências.`;
+             message += ` Foram encontradas ${newErrors.length} divergências sem estoque para cobertura.`;
         }
 
         setConferencias(prev => prev.map(c => c.id === conferenciaId ? { ...c, status: 'Concluída', finishedAt: new Date().toISOString() } : c));
