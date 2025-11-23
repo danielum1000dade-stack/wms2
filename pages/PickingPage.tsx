@@ -121,7 +121,7 @@ const ActivePickingView: React.FC<{
     }), [activeGroup, enderecos]);
 
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [step, setStep] = useState<'SCAN_ADDRESS' | 'SCAN_SKU' | 'ENTER_QUANTITY'>('SCAN_ADDRESS');
+    const [step, setStep] = useState<'SCAN_ADDRESS' | 'ENTER_QUANTITY'>('SCAN_ADDRESS');
     const [inputValue, setInputValue] = useState('');
     const [error, setError] = useState('');
     const [showDivergenceModal, setShowDivergenceModal] = useState(false);
@@ -146,18 +146,10 @@ const ActivePickingView: React.FC<{
         switch (step) {
             case 'SCAN_ADDRESS':
                 if (inputValue.toUpperCase() === String(missionAddress?.codigo).toUpperCase()) {
-                    setStep('SCAN_SKU');
-                    setInputValue('');
-                } else {
-                    setError('Endereço incorreto!');
-                }
-                break;
-            case 'SCAN_SKU':
-                if (inputValue.toUpperCase() === String(missionSku?.sku).toUpperCase()) {
                     setStep('ENTER_QUANTITY');
                     setInputValue(String(currentMission.quantidade)); // Pre-fill with expected quantity
                 } else {
-                    setError('SKU incorreto!');
+                    setError('Endereço incorreto!');
                 }
                 break;
             case 'ENTER_QUANTITY':
@@ -207,7 +199,6 @@ const ActivePickingView: React.FC<{
     
     const inputPlaceholder = {
         SCAN_ADDRESS: `Leia o endereço: ${missionAddress?.codigo}`,
-        SCAN_SKU: `Leia o SKU: ${missionSku?.sku}`,
         ENTER_QUANTITY: `Confirme a quantidade (esperado: ${currentMission.quantidade})`
     }[step];
     
@@ -243,10 +234,11 @@ const ActivePickingView: React.FC<{
                     <StepIndicator title="1. ENDEREÇO DE ORIGEM" current={step === 'SCAN_ADDRESS'} done={step !== 'SCAN_ADDRESS'} value={missionAddress?.codigo} />
                     {step !== 'SCAN_ADDRESS' && (
                         <div className="animate-fade-in">
-                            <StepIndicator title="2. PRODUTO A COLETAR" current={step === 'SCAN_SKU'} done={step === 'ENTER_QUANTITY'} value={String(missionSku?.sku)} />
+                            <StepIndicator title="2. PRODUTO A COLETAR" current={step === 'ENTER_QUANTITY'} done={false} />
                             {missionSku?.foto && <img src={missionSku.foto} alt={missionSku.descritivo} className="w-full h-32 object-contain my-2 bg-gray-100 rounded"/>}
                             <div className="p-3 bg-gray-50 rounded-lg">
                                 <p className="text-xl font-bold">{missionSku?.descritivo}</p>
+                                <p>SKU a coletar: <span className="text-lg font-bold">{missionSku?.sku}</span></p>
                                 <p>Quantidade a coletar: <span className="text-2xl font-bold">{currentMission.quantidade}</span> caixas</p>
                             </div>
                         </div>
