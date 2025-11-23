@@ -147,7 +147,7 @@ const ActivePickingView: React.FC<{
             case 'SCAN_ADDRESS':
                 if (inputValue.toUpperCase() === String(missionAddress?.codigo).toUpperCase()) {
                     setStep('ENTER_QUANTITY');
-                    setInputValue(String(currentMission.quantidade)); // Pre-fill with expected quantity
+                    setInputValue(''); // Clear for SKU input
                 } else {
                     setError('Endereço incorreto!');
                 }
@@ -155,7 +155,7 @@ const ActivePickingView: React.FC<{
             case 'ENTER_QUANTITY':
                 const qty = parseInt(inputValue, 10);
                 if (!isNaN(qty) && qty >= 0 && qty <= currentMission.quantidade) {
-                    if (window.confirm(`Confirmar a coleta de ${qty} caixas do SKU ${missionSku?.sku}?`)) {
+                     if (window.confirm(`Confirmar a coleta de ${qty} caixas do SKU ${missionSku?.sku}?`)) {
                         onCompleteMission(currentMission.id, qty);
                         resetForNextMission();
                     }
