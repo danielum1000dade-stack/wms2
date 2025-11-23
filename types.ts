@@ -24,6 +24,7 @@ export interface SKU {
   status: SKUStatus;
   motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
   classificacaoABC?: 'A' | 'B' | 'C';
+  foto?: string;
 }
 
 export interface Industria {
@@ -131,7 +132,7 @@ export interface Pedido {
     id: string;
     numeroTransporte: string;
     items: PedidoItem[];
-    status: 'Pendente' | 'Em Separação' | 'Separado' | 'Em Conferência' | 'Conferido' | 'Expedido';
+    status: 'Pendente' | 'Em Separação' | 'Separado' | 'Em Conferência' | 'Conferência Parcial' | 'Aguardando Ressuprimento' | 'Conferido' | 'Expedido';
     createdAt: string;
     priority: boolean;
 }
@@ -172,15 +173,28 @@ export enum DivergenciaTipo {
     AVARIA = 'Avaria',
     FALTA = 'Falta',
     SOBRA = 'Sobra',
+    ESTOQUE_INCORRETO = 'Estoque Incorreto',
+}
+
+export enum DivergenciaFonte {
+    RECEBIMENTO = 'Recebimento',
+    PICKING = 'Picking',
+    CONFERENCIA = 'Conferência',
+    INVENTARIO = 'Inventário',
 }
 
 export interface Divergencia {
     id: string;
-    recebimentoId: string;
-    skuId: string;
+    fonte: DivergenciaFonte;
     tipo: DivergenciaTipo;
+    skuId: string;
     quantidade: number;
     observacao?: string;
+    recebimentoId?: string;
+    missaoId?: string;
+    pedidoId?: string;
+    operadorId?: string;
+    createdAt: string;
 }
 
 
@@ -188,6 +202,7 @@ export interface Divergencia {
 export enum ConferenciaErroTipo {
   FALTA = 'Falta',
   SOBRA = 'Sobra',
+  AVARIA = 'Avaria',
   PRODUTO_DIVERGENTE = 'Produto Divergente',
   UNIDADE_INCORRETA = 'Unidade Incorreta'
 }

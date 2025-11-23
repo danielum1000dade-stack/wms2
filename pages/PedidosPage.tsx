@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Pedido } from '../types';
 import ImportExcelModal from '../components/ImportExcelModal';
-import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon, StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
+import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon, StarIcon as StarSolidIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline';
 
 
@@ -17,7 +17,7 @@ interface ColumnConfig {
 }
 
 const PedidosPage: React.FC = () => {
-    const { pedidos, processTransportData, generateMissionsForPedido, updatePedido } = useWMS();
+    const { pedidos, processTransportData, generateMissionsForPedido, updatePedido, reabrirSeparacao } = useWMS();
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
@@ -32,6 +32,15 @@ const PedidosPage: React.FC = () => {
         setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
         setTimeout(() => setFeedback(null), 5000);
     }
+    
+    const handleReabrirSeparacao = (pedido: Pedido) => {
+        if(window.confirm(`Tem certeza que deseja refazer a separação para o transporte ${pedido.numeroTransporte}? Todas as missões geradas serão excluídas e o pedido voltará para o status "Pendente".`)) {
+            const result = reabrirSeparacao(pedido.id);
+            setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
+            setTimeout(() => setFeedback(null), 5000);
+        }
+    }
+
 
     // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
     const columnConfig: ColumnConfig = {
@@ -52,11 +61,19 @@ const PedidosPage: React.FC = () => {
             case 'Pendente': return 'bg-gray-100 text-gray-800';
             case 'Em Separação': return 'bg-yellow-100 text-yellow-800';
             case 'Separado': return 'bg-blue-100 text-blue-800';
+            case 'Em Conferência': return 'bg-orange-100 text-orange-800';
+            case 'Aguardando Ressuprimento': return 'bg-cyan-100 text-cyan-800';
+            case 'Conferência Parcial': return 'bg-yellow-100 text-yellow-800 font-bold';
             case 'Conferido': return 'bg-green-100 text-green-800';
             case 'Expedido': return 'bg-purple-100 text-purple-800';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
+    
+    const canReabrir = (status: Pedido['status']) => {
+        const statusesPermitidos: Pedido['status'][] = ['Separado', 'Em Conferência', 'Conferência Parcial', 'Conferido', 'Aguardando Ressuprimento'];
+        return statusesPermitidos.includes(status);
+    }
 
     return (
         <div className="space-y-6">
@@ -105,13 +122,22 @@ const PedidosPage: React.FC = () => {
                                             {pedido.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end items-center gap-4">
                                         {pedido.status === 'Pendente' && (
                                             <button
                                                 onClick={() => handleGenerateMissions(pedido.id)}
                                                 className="flex items-center gap-1 text-indigo-600 hover:text-indigo-900"
                                             >
-                                               <PlayCircleIcon className="h-5 w-5"/> Processar e Gerar Missões
+                                               <PlayCircleIcon className="h-5 w-5"/> Processar
+                                            </button>
+                                        )}
+                                        {canReabrir(pedido.status) && (
+                                             <button
+                                                onClick={() => handleReabrirSeparacao(pedido)}
+                                                className="flex items-center gap-1 text-red-600 hover:text-red-900"
+                                                title="Reabrir o pedido, excluindo as missões geradas e retornando-o para 'Pendente'"
+                                            >
+                                               <ArrowPathIcon className="h-5 w-5"/> Refazer Separação
                                             </button>
                                         )}
                                     </td>

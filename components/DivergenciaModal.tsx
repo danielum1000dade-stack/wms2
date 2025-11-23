@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { Recebimento, Divergencia, DivergenciaTipo, SKU } from '../types';
+// FIX: Import DivergenciaFonte from ../types
+import { Recebimento, Divergencia, DivergenciaTipo, SKU, DivergenciaFonte } from '../types';
 import Modal from './Modal';
 import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline';
 import SKUModal from './SKUModal';
@@ -26,7 +27,9 @@ const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClos
     
     const divergenciasAtuais = getDivergenciasByRecebimento(recebimento.id);
 
-    const [newDivergencia, setNewDivergencia] = useState<Omit<Divergencia, 'id' | 'recebimentoId'>>({
+    // FIX: Corrected the state type to Omit<Divergencia, 'id' | 'recebimentoId' | 'createdAt'> and added 'fonte' to the initial value to match the type and fix compilation errors.
+    const [newDivergencia, setNewDivergencia] = useState<Omit<Divergencia, 'id' | 'recebimentoId' | 'createdAt'>>({
+        fonte: DivergenciaFonte.RECEBIMENTO,
         skuId: '',
         tipo: DivergenciaTipo.AVARIA,
         quantidade: 1,
@@ -38,7 +41,8 @@ const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClos
     const [skuError, setSkuError] = useState('');
     const [isSkuModalOpen, setIsSkuModalOpen] = useState(false);
 
-    const handleNewDivergenciaChange = (field: keyof Omit<Divergencia, 'id' | 'recebimentoId'>, value: any) => {
+    // FIX: Updated the type for the 'field' parameter to match the corrected state type for newDivergencia.
+    const handleNewDivergenciaChange = (field: keyof Omit<Divergencia, 'id' | 'recebimentoId' | 'createdAt'>, value: any) => {
         setNewDivergencia(prev => ({ ...prev, [field]: field === 'quantidade' ? parseInt(value, 10) : value }));
     };
     
@@ -85,7 +89,9 @@ const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClos
         }
 
         // Reset form
+        // FIX: Added 'fonte' to the reset object to match the corrected state type and resolve compilation error.
         setNewDivergencia({
+            fonte: DivergenciaFonte.RECEBIMENTO,
             skuId: '',
             tipo: DivergenciaTipo.AVARIA,
             quantidade: 1,
