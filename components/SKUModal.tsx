@@ -1,14 +1,16 @@
+
 import React, { useState } from 'react';
-import { SKU, Industria, SKUStatus } from '../types';
+import { SKU, Industria, SKUStatus, TipoBloqueio, BloqueioAplicaA } from '../types';
 
 interface SKUModalProps {
     sku: Partial<SKU>;
     onSave: (data: Omit<SKU, 'id'>) => void;
     onClose: () => void;
     industrias: Industria[];
+    tiposBloqueio: TipoBloqueio[];
 }
 
-const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias }) => {
+const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias, tiposBloqueio }) => {
      const [formData, setFormData] = useState({
         sku: sku?.sku || '',
         descritivo: sku?.descritivo || '',
@@ -28,6 +30,8 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias })
         status: sku?.status || SKUStatus.ATIVO,
         motivoBloqueio: sku?.motivoBloqueio || '',
     });
+
+    const tiposBloqueioParaSku = tiposBloqueio.filter(tb => tb.aplicaA.includes(BloqueioAplicaA.SKU));
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value, type } = e.target;
@@ -84,7 +88,12 @@ const SKUModal: React.FC<SKUModalProps> = ({ sku, onSave, onClose, industrias })
                         {formData.status === SKUStatus.BLOQUEADO && (
                              <div className="md:col-span-2">
                                 <label className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
-                                <textarea name="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} required rows={2} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                                <select name="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
+                                    <option value="" disabled>Selecione um motivo...</option>
+                                    {tiposBloqueioParaSku.map(tb => (
+                                        <option key={tb.id} value={tb.id} title={tb.descricao}>{tb.codigo} - {tb.descricao}</option>
+                                    ))}
+                                </select>
                             </div>
                         )}
                     </div>

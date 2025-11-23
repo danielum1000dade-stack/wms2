@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Etiqueta, Endereco, SKU, EtiquetaStatus, EnderecoTipo, EnderecoStatus } from '../types';
@@ -294,7 +295,8 @@ const ArmazenagemPage: React.FC = () => {
         const sku = skus.find(s => s.id === etiqueta.skuId);
         return (
             <div 
-                ref={el => palletCardRefs.current[etiqueta.id] = el}
+                // FIX: Wrapped ref assignment in curly braces to ensure it returns void.
+                ref={el => { palletCardRefs.current[etiqueta.id] = el; }}
                 onClick={() => handleSelectEtiqueta(etiqueta)}
                 className={`p-4 rounded-lg border cursor-pointer transition-all ${selectedEtiqueta?.id === etiqueta.id ? 'bg-indigo-100 border-indigo-400 ring-2 ring-indigo-300' : 'bg-white hover:bg-gray-50'}`}
             >

@@ -1,3 +1,4 @@
+
 export enum SKUStatus {
   ATIVO = 'Ativo',
   BLOQUEADO = 'Bloqueado'
@@ -21,7 +22,7 @@ export interface SKU {
   familia: string;
   industriaId?: string;
   status: SKUStatus;
-  motivoBloqueio?: string;
+  motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
 }
 
 export interface Industria {
@@ -56,7 +57,7 @@ export interface Endereco {
   sre3?: string;
   sre4?: string;
   sre5?: string;
-  motivoBloqueio?: string;
+  motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
   industriaId?: string;
 }
 
@@ -109,7 +110,7 @@ export interface Etiqueta {
     dataExpedicao?: string;
     palletConsolidadoId?: string; // Para etiquetas de expedição
     isBlocked?: boolean;
-    motivoBloqueio?: string;
+    motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
 }
 
 export interface PedidoItem {
@@ -231,7 +232,8 @@ export enum Permission {
     MANAGE_CADASTRO_ENDERECO = 'MANAGE_CADASTRO_ENDERECO',
     MANAGE_CADASTRO_INDUSTRIA = 'MANAGE_CADASTRO_INDUSTRIA',
     MANAGE_CADASTRO_USUARIOS = 'MANAGE_CADASTRO_USUARIOS',
-    MANAGE_CADASTRO_PERFIS = 'MANAGE_CADASTRO_PERFIS'
+    MANAGE_CADASTRO_PERFIS = 'MANAGE_CADASTRO_PERFIS',
+    MANAGE_CADASTRO_BLOQUEIOS = 'MANAGE_CADASTRO_BLOQUEIOS',
 }
 
 export const permissionLabels: Record<Permission, string> = {
@@ -251,6 +253,7 @@ export const permissionLabels: Record<Permission, string> = {
     [Permission.MANAGE_CADASTRO_INDUSTRIA]: 'Gerenciar Indústrias',
     [Permission.MANAGE_CADASTRO_USUARIOS]: 'Gerenciar Usuários',
     [Permission.MANAGE_CADASTRO_PERFIS]: 'Gerenciar Perfis de Acesso',
+    [Permission.MANAGE_CADASTRO_BLOQUEIOS]: 'Gerenciar Tipos de Bloqueio',
 };
 
 export interface Profile {
@@ -270,4 +273,17 @@ export interface User {
     fullName: string;
     profileId: string;
     status: UserStatus;
+}
+
+export enum BloqueioAplicaA {
+  SKU = 'SKU',
+  PALLET = 'Pallet',
+  ENDERECO = 'Endereço'
+}
+
+export interface TipoBloqueio {
+  id: string;
+  codigo: string;
+  descricao: string;
+  aplicaA: BloqueioAplicaA[];
 }

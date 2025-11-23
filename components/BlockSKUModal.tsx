@@ -1,16 +1,20 @@
+
 import React, { useState } from 'react';
-import { SKU, SKUStatus } from '../types';
+import { SKU, SKUStatus, TipoBloqueio, BloqueioAplicaA } from '../types';
 
 interface BlockSKUModalProps {
     sku: SKU;
     onSave: (sku: SKU) => void;
     onClose: () => void;
+    tiposBloqueio: TipoBloqueio[];
 }
 
-const BlockSKUModal: React.FC<BlockSKUModalProps> = ({ sku, onSave, onClose }) => {
+const BlockSKUModal: React.FC<BlockSKUModalProps> = ({ sku, onSave, onClose, tiposBloqueio }) => {
     const [status, setStatus] = useState<SKUStatus>(sku.status);
     const [motivo, setMotivo] = useState(sku.motivoBloqueio || '');
     const [error, setError] = useState('');
+
+    const tiposBloqueioParaSku = tiposBloqueio.filter(tb => tb.aplicaA.includes(BloqueioAplicaA.SKU));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -51,14 +55,18 @@ const BlockSKUModal: React.FC<BlockSKUModalProps> = ({ sku, onSave, onClose }) =
                     {status === SKUStatus.BLOQUEADO && (
                         <div>
                             <label htmlFor="motivo" className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
-                            <textarea
+                            <select
                                 id="motivo"
                                 value={motivo}
                                 onChange={(e) => setMotivo(e.target.value)}
-                                rows={3}
                                 required
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"
-                            />
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white"
+                            >
+                                <option value="" disabled>Selecione um motivo...</option>
+                                {tiposBloqueioParaSku.map(tb => (
+                                    <option key={tb.id} value={tb.id} title={tb.descricao}>{tb.codigo} - {tb.descricao}</option>
+                                ))}
+                            </select>
                         </div>
                     )}
                     

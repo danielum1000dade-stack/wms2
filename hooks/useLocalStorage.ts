@@ -1,7 +1,9 @@
+
 import { useState, useEffect, Dispatch, SetStateAction } from 'react';
 
 // FIX: Cannot find namespace 'React'. Changed the return type to use Dispatch and SetStateAction directly.
-function useLocalStorage<T,>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
+// FIX: Removed trailing comma from generic type parameter.
+function useLocalStorage<T>(key: string, initialValue: T): [T, Dispatch<SetStateAction<T>>] {
   const [storedValue, setStoredValue] = useState<T>(() => {
     try {
       const item = window.localStorage.getItem(key);

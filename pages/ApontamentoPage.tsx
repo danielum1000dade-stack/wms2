@@ -8,7 +8,8 @@ import SKUModal from '../components/SKUModal';
 declare const Html5QrcodeScanner: any;
 
 const ApontamentoPage: React.FC = () => {
-    const { getEtiquetasPendentesApontamento, apontarEtiqueta, getEtiquetaById, skus, addSku } = useWMS();
+    // FIX: Added `industrias` and `tiposBloqueio` to context destructuring to pass to SKUModal.
+    const { getEtiquetasPendentesApontamento, apontarEtiqueta, getEtiquetaById, skus, addSku, industrias, tiposBloqueio } = useWMS();
     const [etiquetaId, setEtiquetaId] = useState('');
     const [formData, setFormData] = useState({ skuId: '', quantidadeCaixas: '', lote: '', validade: '', observacoes: '' });
     const [selectedEtiqueta, setSelectedEtiqueta] = useState<Etiqueta | null>(null);
@@ -250,6 +251,9 @@ const ApontamentoPage: React.FC = () => {
                     sku={{ sku: skuInput }} // Pre-fill the SKU code the user typed
                     onSave={handleSaveNewSku}
                     onClose={() => setIsSkuModalOpen(false)}
+                    // FIX: Passed missing `industrias` and `tiposBloqueio` props.
+                    industrias={industrias}
+                    tiposBloqueio={tiposBloqueio}
                 />
              )}
         </div>

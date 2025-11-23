@@ -1,7 +1,8 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 // FIX: Imported missing types 'InventoryCountSession' and 'InventoryCountItem' to resolve 'Cannot find name' errors throughout the component.
-import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria, InventoryCountSession, InventoryCountItem, SKUStatus } from '../types';
+import { Endereco, Etiqueta, EtiquetaStatus, SKU, EnderecoTipo, EnderecoStatus, Industria, InventoryCountSession, InventoryCountItem, SKUStatus, TipoBloqueio } from '../types';
 import { PlusIcon, PlayIcon, DocumentMagnifyingGlassIcon, ListBulletIcon, MagnifyingGlassIcon, ArrowUturnLeftIcon, TruckIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import ReplenishmentModal from '../components/ReplenishmentModal';
 import BlockSKUModal from '../components/BlockSKUModal';
@@ -40,7 +41,7 @@ const EstoquePage: React.FC = () => {
 };
 
 const ConsultaEstoque: React.FC = () => {
-    const { etiquetas, enderecos, skus, industrias, updateSku, updateEtiqueta } = useWMS();
+    const { etiquetas, enderecos, skus, industrias, updateSku, updateEtiqueta, tiposBloqueio } = useWMS();
     const [isReplenishmentModalOpen, setIsReplenishmentModalOpen] = useState(false);
     const [isBlockSkuModalOpen, setIsBlockSkuModalOpen] = useState(false);
     const [isBlockEtiquetaModalOpen, setIsBlockEtiquetaModalOpen] = useState(false);
@@ -62,27 +63,29 @@ const ConsultaEstoque: React.FC = () => {
     };
 
     const filteredStock = useMemo(() => {
-         return etiquetas
-            .filter(etiqueta => {
-                if (etiqueta.status !== EtiquetaStatus.ARMAZENADA || !etiqueta.enderecoId) return false;
-                
-                const sku = skus.find(s => s.id === etiqueta.skuId);
-                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
+        const hasActiveFilters = filters.sku || filters.lote || filters.endereco || filters.industriaId !== 'todos';
+        if (!hasActiveFilters) {
+            return [];
+        }
 
-                if (!filters.sku && !filters.lote && !filters.endereco && filters.industriaId === 'todos') return false;
-
-                if (filters.sku && (!sku || !String(sku.sku).toLowerCase().includes(filters.sku.toLowerCase()))) return false;
-                if (filters.lote && (!etiqueta.lote || !etiqueta.lote.toLowerCase().includes(filters.lote.toLowerCase()))) return false;
-                if (filters.endereco && (!endereco || !endereco.nome.toLowerCase().includes(filters.endereco.toLowerCase()))) return false;
-                if (filters.industriaId !== 'todos' && (!sku || sku.industriaId !== filters.industriaId)) return false;
-                
-                return true;
-            })
+        return etiquetas
+            .filter(etiqueta => etiqueta.status === EtiquetaStatus.ARMAZENADA && etiqueta.enderecoId)
             .map(etiqueta => {
-                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
                 const sku = skus.find(s => s.id === etiqueta.skuId);
+                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
                 const industria = sku ? industrias.find(i => i.id === sku.industriaId) : null;
                 return { etiqueta, endereco, sku, industria };
+            })
+            .filter(item => {
+                const { etiqueta, sku, endereco } = item;
+                if (!sku || !endereco) return false;
+
+                const skuMatch = filters.sku ? String(sku.sku).toLowerCase().includes(filters.sku.toLowerCase()) : true;
+                const loteMatch = filters.lote ? (etiqueta.lote || '').toLowerCase().includes(filters.lote.toLowerCase()) : true;
+                const enderecoMatch = filters.endereco ? (endereco.nome).toLowerCase().includes(filters.endereco.toLowerCase()) : true;
+                const industriaMatch = filters.industriaId !== 'todos' ? sku.industriaId === filters.industriaId : true;
+
+                return skuMatch && loteMatch && enderecoMatch && industriaMatch;
             })
             .sort((a, b) => (a.endereco?.nome || '').localeCompare(b.endereco?.nome || ''));
     }, [etiquetas, enderecos, skus, industrias, filters]);
@@ -198,12 +201,14 @@ const ConsultaEstoque: React.FC = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {filteredStock.map(({ etiqueta, endereco, sku }) => {
                             const shelfLife = getShelfLifeStatus(etiqueta.validade, sku?.tempoVida);
+                            const motivoBloqueioSku = tiposBloqueio.find(tb => tb.id === sku?.motivoBloqueio);
+                            const motivoBloqueioEtiqueta = tiposBloqueio.find(tb => tb.id === etiqueta.motivoBloqueio);
                             return (
                                 <tr key={etiqueta.id} className={etiqueta.isBlocked ? 'bg-orange-50' : (sku?.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : '')}>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                         {sku?.sku}
-                                        {sku?.status === SKUStatus.BLOQUEADO && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">SKU Bloqueado</span>}
-                                        {etiqueta.isBlocked && <span className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">Pallet Bloqueado</span>}
+                                        {sku?.status === SKUStatus.BLOQUEADO && <span title={motivoBloqueioSku?.descricao} className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-red-100 text-red-800">SKU Bloqueado ({motivoBloqueioSku?.codigo})</span>}
+                                        {etiqueta.isBlocked && <span title={motivoBloqueioEtiqueta?.descricao} className="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-orange-100 text-orange-800">Pallet Bloqueado ({motivoBloqueioEtiqueta?.codigo})</span>}
                                     </td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{sku?.descritivo}</td>
                                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{endereco?.nome}</td>
@@ -260,6 +265,7 @@ const ConsultaEstoque: React.FC = () => {
                     sku={skuToBlock}
                     onSave={handleSaveSkuStatus}
                     onClose={() => setIsBlockSkuModalOpen(false)}
+                    tiposBloqueio={tiposBloqueio}
                 />
             )}
             
@@ -268,6 +274,7 @@ const ConsultaEstoque: React.FC = () => {
                     etiqueta={etiquetaToBlock}
                     onSave={handleSaveEtiquetaStatus}
                     onClose={() => setIsBlockEtiquetaModalOpen(false)}
+                    tiposBloqueio={tiposBloqueio}
                 />
             )}
         </div>
@@ -803,40 +810,36 @@ const CountingComponent: React.FC<{ session: InventoryCountSession, onBack: () =
                                 {countedSkuError && ( <p className="text-xs text-red-700 mt-1">{countedSkuError}</p> )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Lote Contado</label>
+                                <label className="block text-sm font-medium text-gray-700">Lote</label>
                                 <input type="text" value={countedLote} onChange={e => setCountedLote(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Validade Contada</label>
+                             <div>
+                                <label className="block text-sm font-medium text-gray-700">Validade</label>
                                 <input type="date" value={countedValidade} onChange={e => setCountedValidade(e.target.value)} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
                             </div>
-                            <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 font-bold">Quantidade Contada</label>
-                                <input type="number" value={countedQuantity} onChange={e => setCountedQuantity(e.target.value === '' ? '' : parseInt(e.target.value, 10))} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                             <div className="md:col-span-2">
+                                <label className="block text-sm font-medium text-gray-700">Quantidade Contada</label>
+                                <input type="number" value={countedQuantity} onChange={e => setCountedQuantity(e.target.value === '' ? '' : Number(e.target.value))} min="0" className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
                             </div>
                         </div>
                     </div>
-                    <button onClick={() => handleSubmitCount('Contado')} className="w-full bg-green-600 text-white font-bold py-3 rounded-lg shadow hover:bg-green-700">Confirmar Contagem</button>
-                    <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => handleSubmitCount('Vazio')} className="w-full bg-yellow-500 text-white py-2 rounded-lg shadow hover:bg-yellow-600">Endereço Vazio</button>
-                        <button onClick={() => handleSubmitCount('Pulado')} className="w-full bg-gray-400 text-white py-2 rounded-lg shadow hover:bg-gray-500">Pular Endereço</button>
+                     <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => handleSubmitCount('Vazio')} className="w-full bg-yellow-500 text-white font-bold py-2 px-4 rounded-md hover:bg-yellow-600">Endereço Vazio</button>
+                        <button onClick={() => handleSubmitCount('Contado')} className="w-full bg-green-500 text-white font-bold py-2 px-4 rounded-md hover:bg-green-600">Confirmar Contagem</button>
                     </div>
                 </div>
             </div>
-
-            <div className="mt-6 pt-4 border-t flex justify-between items-center">
+             <div className="mt-6 pt-4 border-t flex justify-between items-center">
+                <button onClick={onBack} className="bg-gray-500 text-white px-4 py-2 rounded-lg">Sair da Sessão</button>
                 <div className="flex gap-2">
-                    <button onClick={onBack} className="bg-gray-500 text-white px-4 py-2 rounded-lg">Sair da Contagem</button>
-                    <button onClick={() => undoLastCount(session.id)} disabled={countItems.length === 0} className="flex items-center gap-2 bg-white text-gray-700 px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <ArrowUturnLeftIcon className="h-5 w-5" />
-                        Voltar Posição Anterior
+                    <button onClick={() => undoLastCount(session.id)} disabled={countItems.length === 0} className="flex items-center text-sm text-yellow-600 hover:text-yellow-800 disabled:opacity-50">
+                        <ArrowUturnLeftIcon className="h-4 w-4 mr-1"/> Desfazer Última
                     </button>
+                    <button onClick={() => finishInventoryCount(session.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Finalizar Sessão</button>
                 </div>
-                <button onClick={() => finishInventoryCount(session.id)} className="bg-blue-600 text-white px-4 py-2 rounded-lg">Finalizar e Ver Resumo</button>
             </div>
         </div>
-    )
+    );
 };
-
 
 export default EstoquePage;

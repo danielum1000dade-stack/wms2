@@ -4,7 +4,8 @@ import {
     SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
     EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
     EnderecoStatus, User, UserStatus, Profile, Permission,
-    InventoryCountSession, InventoryCountItem, SKUStatus, PedidoItem
+    InventoryCountSession, InventoryCountItem, SKUStatus, PedidoItem,
+    TipoBloqueio
 } from '../types';
 
 const ADMIN_PROFILE_ID = 'admin_profile';
@@ -105,6 +106,10 @@ interface WMSContextType {
     addProfile: (profile: Omit<Profile, 'id'>) => { success: boolean, message?: string };
     updateProfile: (profile: Profile) => { success: boolean, message?: string };
     deleteProfile: (id: string) => { success: boolean, message?: string };
+    tiposBloqueio: TipoBloqueio[];
+    addTipoBloqueio: (tipoBloqueio: Omit<TipoBloqueio, 'id'>) => { success: boolean, message?: string };
+    updateTipoBloqueio: (tipoBloqueio: TipoBloqueio) => { success: boolean, message?: string };
+    deleteTipoBloqueio: (id: string) => { success: boolean, message?: string };
     inventoryCountSessions: InventoryCountSession[];
     inventoryCountItems: InventoryCountItem[];
     startInventoryCount: (filters: InventoryCountSession['filters'], locations: Endereco[]) => InventoryCountSession;
@@ -130,6 +135,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [users, setUsers] = useLocalStorage<User[]>('wms_users', [
         { id: 'admin_user', username: 'admin', fullName: 'Administrador', profileId: ADMIN_PROFILE_ID, status: UserStatus.ATIVO }
     ]);
+    const [tiposBloqueio, setTiposBloqueio] = useLocalStorage<TipoBloqueio[]>('wms_tipos_bloqueio', []);
     const [inventoryCountSessions, setInventoryCountSessions] = useLocalStorage<InventoryCountSession[]>('wms_inventory_sessions', []);
     const [inventoryCountItems, setInventoryCountItems] = useLocalStorage<InventoryCountItem[]>('wms_inventory_items', []);
 
@@ -146,7 +152,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const skusWithIds = newSkus.map(sku => ({ ...sku, id: generateId(), status: SKUStatus.ATIVO }));
         setSkus(prev => [...prev, ...skusWithIds]);
     };
-    const updateSku = (updatedSku: SKU) => setSkus(skus.map(s => s.id === updatedSku.id ? updatedSku : s));
+    const updateSku = (updatedSku: SKU) => setSkus(prev => prev.map(s => s.id === updatedSku.id ? updatedSku : s));
     const deleteSku = (id: string): boolean => {
         const isSkuInUse = etiquetas.some(etiqueta => etiqueta.skuId === id);
         if (isSkuInUse) {
@@ -158,19 +164,21 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     // Endereco Management
-    const addEndereco = (endereco: Omit<Endereco, 'id'>) => setEnderecos([...enderecos, { ...endereco, id: generateId(), status: endereco.status || EnderecoStatus.LIVRE }]);
+    const addEndereco = (endereco: Omit<Endereco, 'id'>) => setEnderecos(prev => [...prev, { ...endereco, id: generateId(), status: endereco.status || EnderecoStatus.LIVRE }]);
     const addEnderecosBatch = (newEnderecos: Omit<Endereco, 'id'>[]) => {
         const enderecosWithIds = newEnderecos.map(end => ({ ...end, id: generateId(), status: end.status || EnderecoStatus.LIVRE }));
         setEnderecos(prev => [...prev, ...enderecosWithIds]);
     };
-    const updateEndereco = (updatedEndereco: Endereco) => setEnderecos(enderecos.map(e => e.id === updatedEndereco.id ? updatedEndereco : e));
+    const updateEndereco = (updatedEndereco: Endereco) => setEnderecos(prev => prev.map(e => e.id === updatedEndereco.id ? updatedEndereco : e));
     const deleteEndereco = (id: string) => {
-        const enderecoToDelete = enderecos.find(e => e.id === id);
-        if (enderecoToDelete && enderecoToDelete.status === EnderecoStatus.OCUPADO) {
-            alert("Não é possível excluir um endereço que está ocupado.");
-            return;
-        }
-        setEnderecos(enderecos.filter(e => e.id !== id));
+        setEnderecos(prevEnderecos => {
+            const enderecoToDelete = prevEnderecos.find(e => e.id === id);
+            if (enderecoToDelete && enderecoToDelete.status === EnderecoStatus.OCUPADO) {
+                alert("Não é possível excluir um endereço que está ocupado.");
+                return prevEnderecos;
+            }
+            return prevEnderecos.filter(e => e.id !== id);
+        });
     };
 
     // Industria Management
@@ -183,7 +191,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const industriasWithIds = newIndustrias.map(ind => ({ ...ind, id: generateId() }));
         setIndustrias(prev => [...prev, ...industriasWithIds]);
     };
-    const updateIndustria = (updatedIndustria: Industria) => setIndustrias(industrias.map(i => i.id === updatedIndustria.id ? updatedIndustria : i));
+    const updateIndustria = (updatedIndustria: Industria) => setIndustrias(prev => prev.map(i => i.id === updatedIndustria.id ? updatedIndustria : i));
     const deleteIndustria = (id: string): boolean => {
         const industriaToDelete = industrias.find(i => i.id === id);
         if (!industriaToDelete) return false;
@@ -220,11 +228,15 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         
         const nfPart = newRecebimento.notaFiscal.replace(/\D/g, '').slice(-4) || '0000';
         
-        const lastEtiquetaNum = etiquetas.reduce((max, e) => {
-            const parts = e.id.split('-');
-            const num = parseInt(parts[parts.length - 1], 10);
-            return isNaN(num) ? max : Math.max(max, num);
-        }, 0);
+        let lastEtiquetaNum = 0;
+        setEtiquetas(prev => {
+            lastEtiquetaNum = prev.reduce((max, e) => {
+                const parts = e.id.split('-');
+                const num = parseInt(parts[parts.length - 1], 10);
+                return isNaN(num) ? max : Math.max(max, num);
+            }, 0);
+            return prev;
+        });
 
         const newEtiquetas: Etiqueta[] = Array.from({ length: etiquetasCount }, (_, i) => {
              const newId = `P${nfPart}-${(lastEtiquetaNum + i + 1).toString().padStart(5, '0')}`;
@@ -241,49 +253,53 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { newRecebimento, newEtiquetas };
     };
     
-    const updateRecebimento = (updatedRecebimento: Recebimento) => setRecebimentos(recebimentos.map(r => r.id === updatedRecebimento.id ? updatedRecebimento : r));
+    const updateRecebimento = (updatedRecebimento: Recebimento) => setRecebimentos(prev => prev.map(r => r.id === updatedRecebimento.id ? updatedRecebimento : r));
 
 
     // Etiqueta Management
     const getEtiquetaById = (id: string) => etiquetas.find(e => e.id === id);
-    const updateEtiqueta = (updatedEtiqueta: Etiqueta) => setEtiquetas(etiquetas.map(e => e.id === updatedEtiqueta.id ? updatedEtiqueta : e));
+    const updateEtiqueta = (updatedEtiqueta: Etiqueta) => setEtiquetas(prev => prev.map(e => e.id === updatedEtiqueta.id ? updatedEtiqueta : e));
     
     const addEtiqueta = (etiquetaData: Partial<Etiqueta>): Etiqueta => {
-        const nfPart = 'INV';
-        const lastEtiquetaNum = etiquetas.reduce((max, e) => {
-            const parts = e.id.split('-');
-            if (parts.length > 1) {
-                const num = parseInt(parts[parts.length - 1], 10);
-                return isNaN(num) ? max : Math.max(max, num);
-            }
-            return max;
-        }, 0);
-        const newId = `P${nfPart}-${(lastEtiquetaNum + 1).toString().padStart(5, '0')}`;
+        let newEtiqueta: Etiqueta;
+        
+        setEtiquetas(prev => {
+            const nfPart = 'INV';
+            const lastEtiquetaNum = prev.reduce((max, e) => {
+                const parts = e.id.split('-');
+                if (parts.length > 1) {
+                    const num = parseInt(parts[parts.length - 1], 10);
+                    return isNaN(num) ? max : Math.max(max, num);
+                }
+                return max;
+            }, 0);
+            const newId = `P${nfPart}-${(lastEtiquetaNum + 1).toString().padStart(5, '0')}`;
 
-        const newEtiqueta: Etiqueta = {
-            id: newId,
-            recebimentoId: 'INVENTORY_ADJUSTMENT',
-            status: EtiquetaStatus.ARMAZENADA,
-            skuId: undefined,
-            quantidadeCaixas: undefined,
-            lote: undefined,
-            validade: undefined,
-            observacoes: undefined,
-            enderecoId: undefined,
-            dataApontamento: undefined,
-            dataArmazenagem: undefined,
-            dataExpedicao: undefined,
-            palletConsolidadoId: undefined,
-            ...etiquetaData,
-        };
+            newEtiqueta = {
+                id: newId,
+                recebimentoId: 'INVENTORY_ADJUSTMENT',
+                status: EtiquetaStatus.ARMAZENADA,
+                skuId: undefined,
+                quantidadeCaixas: undefined,
+                lote: undefined,
+                validade: undefined,
+                observacoes: undefined,
+                enderecoId: undefined,
+                dataApontamento: undefined,
+                dataArmazenagem: undefined,
+                dataExpedicao: undefined,
+                palletConsolidadoId: undefined,
+                ...etiquetaData,
+            };
+            return [...prev, newEtiqueta];
+        });
         
-        setEtiquetas(prev => [...prev, newEtiqueta]);
-        
-        if (newEtiqueta.enderecoId) {
-            setEnderecos(prev => prev.map(e => e.id === newEtiqueta.enderecoId ? { ...e, status: EnderecoStatus.OCUPADO } : e));
+        // This must be a separate call to avoid issues with stale state if both are modified.
+        if (etiquetaData.enderecoId) {
+            setEnderecos(prev => prev.map(e => e.id === etiquetaData.enderecoId ? { ...e, status: EnderecoStatus.OCUPADO } : e));
         }
 
-        return newEtiqueta;
+        return newEtiqueta!;
     };
 
     const deleteEtiqueta = (id: string): { success: boolean; message?: string } => {
@@ -316,66 +332,74 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const getEtiquetasByRecebimento = (recebimentoId: string) => etiquetas.filter(e => e.recebimentoId === recebimentoId);
     const getEtiquetasPendentesApontamento = () => etiquetas.filter(e => e.status === EtiquetaStatus.PENDENTE_APONTAMENTO);
     const apontarEtiqueta = (id: string, data: Partial<Etiqueta>) => {
-        const etiqueta = getEtiquetaById(id);
-        if (etiqueta) {
-            updateEtiqueta({
-                ...etiqueta,
-                ...data,
-                status: EtiquetaStatus.APONTADA,
-                dataApontamento: new Date().toISOString()
-            });
-        }
+        setEtiquetas(prevEtiquetas => 
+            prevEtiquetas.map(etiqueta => 
+                etiqueta.id === id 
+                    ? {
+                        ...etiqueta,
+                        ...data,
+                        status: EtiquetaStatus.APONTADA,
+                        dataApontamento: new Date().toISOString()
+                      }
+                    : etiqueta
+            )
+        );
     };
 
     const armazenarEtiqueta = (id: string, enderecoId: string): { success: boolean; message?: string } => {
-        const etiqueta = getEtiquetaById(id);
-        const enderecoDestino = enderecos.find(e => e.id === enderecoId);
-
-        if (!etiqueta) {
-            const message = "Armazenagem inválida: Etiqueta não encontrada.";
-            console.error(message, { id });
-            return { success: false, message };
-        }
-        if (!enderecoDestino) {
-            const message = "Armazenagem inválida: Endereço de destino não encontrado.";
-            console.error(message, { enderecoId });
-            return { success: false, message };
-        }
-         if (enderecoDestino.status !== EnderecoStatus.LIVRE) {
-            const message = `Armazenagem inválida: Endereço ${enderecoDestino.nome} não está livre. Status: ${enderecoDestino.status}.`;
-            console.error(message, { enderecoDestino });
-            return { success: false, message };
-        }
-
-        setEnderecos(prevEnderecos => {
-            let newEnderecos = [...prevEnderecos];
-            // Free up old address if it exists
-            if (etiqueta.enderecoId) {
-                const oldEnderecoIndex = newEnderecos.findIndex(e => e.id === etiqueta.enderecoId);
-                if (oldEnderecoIndex > -1) {
-                    newEnderecos[oldEnderecoIndex] = { ...newEnderecos[oldEnderecoIndex], status: EnderecoStatus.LIVRE };
-                }
-            }
-            // Occupy new address
-            const newEnderecoIndex = newEnderecos.findIndex(e => e.id === enderecoId);
-            if (newEnderecoIndex > -1) {
-                newEnderecos[newEnderecoIndex] = { ...newEnderecos[newEnderecoIndex], status: EnderecoStatus.OCUPADO };
-            }
-            return newEnderecos;
-        });
+        let success = false;
+        let message = '';
         
-        updateEtiqueta({
-            ...etiqueta,
-            enderecoId,
-            status: EtiquetaStatus.ARMAZENADA,
-            dataArmazenagem: new Date().toISOString()
+        setEtiquetas(prevEtiquetas => {
+            const etiqueta = prevEtiquetas.find(e => e.id === id);
+            
+            if (!etiqueta) {
+                message = "Armazenagem inválida: Etiqueta não encontrada.";
+                return prevEtiquetas;
+            }
+
+            const oldEnderecoId = etiqueta.enderecoId;
+
+            setEnderecos(prevEnderecos => {
+                const enderecoDestino = prevEnderecos.find(e => e.id === enderecoId);
+                if (!enderecoDestino) {
+                    message = "Armazenagem inválida: Endereço de destino não encontrado.";
+                    return prevEnderecos;
+                }
+                if (enderecoDestino.status !== EnderecoStatus.LIVRE) {
+                    message = `Armazenagem inválida: Endereço ${enderecoDestino.nome} não está livre. Status: ${enderecoDestino.status}.`;
+                    return prevEnderecos;
+                }
+                
+                success = true;
+                
+                return prevEnderecos.map(e => {
+                    if (e.id === oldEnderecoId) {
+                        return { ...e, status: EnderecoStatus.LIVRE };
+                    }
+                    if (e.id === enderecoId) {
+                        return { ...e, status: EnderecoStatus.OCUPADO };
+                    }
+                    return e;
+                });
+            });
+
+            if (success) {
+                return prevEtiquetas.map(e => e.id === id ? {
+                    ...e,
+                    enderecoId,
+                    status: EtiquetaStatus.ARMAZENADA,
+                    dataArmazenagem: new Date().toISOString()
+                } : e);
+            }
+            return prevEtiquetas;
         });
 
-        return { success: true };
+        return { success, message };
     };
     
     // Pedido Management
-    const addPedidos = (newPedidos: Pedido[]) => setPedidos([...pedidos, ...newPedidos]);
+    const addPedidos = (newPedidos: Pedido[]) => setPedidos(prev => [...prev, ...newPedidos]);
 
      const processTransportData = (transportData: any[]): { success: boolean; message: string; } => {
         const groupedByTransporte = transportData.reduce((acc, row) => {
@@ -447,7 +471,6 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             let quantidadePendente = item.quantidadeCaixas;
 
-            // Find all available stock for this specific SKU and Lote, oldest first (FIFO)
             const etiquetasDisponiveis = etiquetas.filter(e =>
                 e.skuId === sku.id &&
                 e.lote === item.lote &&
@@ -456,7 +479,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             ).sort((a, b) => {
                 const dateA = a.validade ? new Date(a.validade).getTime() : 0;
                 const dateB = b.validade ? new Date(b.validade).getTime() : 0;
-                return dateA - dateB; // Sort by earliest expiry date (FIFO)
+                return dateA - dateB; 
             });
 
             if (etiquetasDisponiveis.length === 0) {
@@ -464,14 +487,13 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 continue;
             }
 
-            // Iterate through available stock to fulfill the required quantity
             for (const etiqueta of etiquetasDisponiveis) {
                 if (quantidadePendente <= 0) break;
-                if (!etiqueta.enderecoId) continue; // Skip pallets without a location
+                if (!etiqueta.enderecoId) continue; 
 
                 const enderecoOrigem = enderecos.find(end => end.id === etiqueta.enderecoId);
                 if (!enderecoOrigem || enderecoOrigem.status === EnderecoStatus.BLOQUEADO) {
-                    continue; // Skip if address is blocked
+                    continue; 
                 }
 
                 const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
@@ -534,7 +556,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const itemSku = skus.find(s => s.sku === item.sku);
             if (!itemSku || blockedSkuIds.includes(itemSku.id)) {
                 console.warn(`SKU ${item.sku} not found or is blocked. Skipping picking mission creation for this item.`);
-                return; // Skip to next item if SKU is blocked or not found
+                return; 
             }
 
             const etiquetasDisponiveis = etiquetas.filter(e => 
@@ -568,8 +590,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
 
         if (newMissions.length > 0) {
-            setMissoes([...missoes, ...newMissions]);
-            setPedidos(pedidos.map(p => p.id === pedido.id ? {...p, status: 'Em Separação'} : p));
+            setMissoes(prev => [...prev, ...newMissions]);
+            setPedidos(prev => prev.map(p => p.id === pedido.id ? {...p, status: 'Em Separação'} : p));
             
             const missionEtiquetaIds = new Set(newMissions.map(m => m.etiquetaId));
             setEtiquetas(prevEtiquetas => 
@@ -603,128 +625,131 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     const deleteMission = (missionId: string): { success: boolean, message?: string } => {
-        const missionToDelete = missoes.find(m => m.id === missionId);
-
-        if (!missionToDelete) {
-            return { success: false, message: 'Missão não encontrada.' };
-        }
-
-        if (missionToDelete.status !== 'Pendente') {
-            return { success: false, message: 'Apenas missões pendentes podem ser excluídas.' };
-        }
-
-        // Revert pallet status to Armazenada
-        setEtiquetas(prevEtiquetas => 
-            prevEtiquetas.map(etiqueta => 
-                etiqueta.id === missionToDelete.etiquetaId 
-                    ? { ...etiqueta, status: EtiquetaStatus.ARMAZENADA } 
-                    : etiqueta
-            )
-        );
-
-        // Remove mission
-        setMissoes(prevMissoes => prevMissoes.filter(m => m.id !== missionId));
+        let missionToDelete: Missao | undefined;
+        let success = false;
+        let message = '';
+    
+        setMissoes(prevMissoes => {
+            missionToDelete = prevMissoes.find(m => m.id === missionId);
+            if (!missionToDelete) {
+                message = 'Missão não encontrada.';
+                return prevMissoes;
+            }
+            if (missionToDelete.status !== 'Pendente') {
+                message = 'Apenas missões pendentes podem ser excluídas.';
+                return prevMissoes;
+            }
+            
+            // Revert pallet status to Armazenada in a separate state update
+            setEtiquetas(prevEtiquetas => 
+                prevEtiquetas.map(etiqueta => 
+                    etiqueta.id === missionToDelete!.etiquetaId 
+                        ? { ...etiqueta, status: EtiquetaStatus.ARMAZENADA } 
+                        : etiqueta
+                )
+            );
+            
+            success = true;
+            return prevMissoes.filter(m => m.id !== missionId);
+        });
         
-        return { success: true };
+        return { success, message };
     };
 
     const updateMissionStatus = (missionId: string, status: Missao['status']) => {
-        let pedidoIdToUpdate: string | undefined;
-        let completedMission: Missao | undefined;
-        
-        setMissoes(prev => prev.map(m => {
-            if (m.id === missionId) {
-                const updatedMission = { ...m, status };
-                if (status === 'Concluída') {
-                    pedidoIdToUpdate = m.pedidoId;
-                    completedMission = updatedMission;
-                }
-                return updatedMission;
-            }
-            return m;
-        }));
+        setMissoes(prevMissoes => {
+            const updatedMissoes = prevMissoes.map(m => (m.id === missionId ? { ...m, status } : m));
+            const completedMission = updatedMissoes.find(m => m.id === missionId);
 
-         if (status === 'Concluída' && pedidoIdToUpdate) {
-            const allMissionsForPedido = missoes.filter(m => m.pedidoId === pedidoIdToUpdate && m.id !== missionId);
-            const allOthersCompleted = allMissionsForPedido.every(m => m.status === 'Concluída');
-            
-            if (allOthersCompleted) {
-                setPedidos(prev => prev.map(p => p.id === pedidoIdToUpdate ? { ...p, status: 'Separado' } : p));
-                const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.EXPEDICAO);
-                if (completedMission && antechamber) {
-                    createMission({
-                        tipo: MissaoTipo.CONFERENCIA,
-                        pedidoId: pedidoIdToUpdate,
-                        etiquetaId: 'N/A', // Conferência não é sobre um pallet, mas um pedido
-                        skuId: 'N/A',
-                        quantidade: 0,
-                        origemId: completedMission.destinoId,
-                        destinoId: antechamber.id
-                    });
+            if (status === 'Concluída' && completedMission?.pedidoId) {
+                const pedidoId = completedMission.pedidoId;
+                const allMissionsForPedido = updatedMissoes.filter(m => m.pedidoId === pedidoId);
+                const allOthersCompleted = allMissionsForPedido.every(m => m.status === 'Concluída');
+                
+                if (allOthersCompleted) {
+                    setPedidos(prevPedidos => prevPedidos.map(p => p.id === pedidoId ? { ...p, status: 'Separado' } : p));
+                    
+                    const antechamber = enderecos.find(e => e.tipo === EnderecoTipo.EXPEDICAO);
+                    if (antechamber) {
+                        const newConferenceMission: Missao = {
+                            id: generateId(),
+                            tipo: MissaoTipo.CONFERENCIA,
+                            pedidoId: pedidoId,
+                            etiquetaId: 'N/A',
+                            skuId: 'N/A',
+                            quantidade: 0,
+                            origemId: completedMission.destinoId,
+                            destinoId: antechamber.id,
+                            status: 'Pendente',
+                            createdAt: new Date().toISOString(),
+                        };
+                        return [...updatedMissoes, newConferenceMission];
+                    }
                 }
             }
-        }
+            return updatedMissoes;
+        });
     };
     
     const assignNextMission = (operadorId: string): Missao | null => {
-        const hasActiveMission = missoes.some(m => m.operadorId === operadorId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
-        if (hasActiveMission) {
-            console.warn(`Operator ${operadorId} already has an active mission.`);
-            return null;
-        }
+        let assignedMission: Missao | null = null;
+        setMissoes(prevMissoes => {
+            const hasActiveMission = prevMissoes.some(m => m.operadorId === operadorId && (m.status === 'Atribuída' || m.status === 'Em Andamento'));
+            if (hasActiveMission) {
+                console.warn(`Operator ${operadorId} already has an active mission.`);
+                return prevMissoes;
+            }
 
-        const pendingMissions = missoes
-            .filter(m => m.status === 'Pendente')
-            .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            const pendingMissions = prevMissoes
+                .filter(m => m.status === 'Pendente')
+                .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-        if (pendingMissions.length === 0) {
-            return null;
-        }
+            if (pendingMissions.length === 0) {
+                return prevMissoes;
+            }
 
-        const missionToAssign = pendingMissions[0];
-
-        const updatedMission = {
-            ...missionToAssign,
-            status: 'Atribuída' as const,
-            operadorId: operadorId,
-        };
-
-        setMissoes(prev => prev.map(m => m.id === updatedMission.id ? updatedMission : m));
-
-        return updatedMission;
+            const missionToAssign = pendingMissions[0];
+            assignedMission = { ...missionToAssign, status: 'Atribuída' as const, operadorId: operadorId };
+            return prevMissoes.map(m => (m.id === assignedMission!.id ? assignedMission : m));
+        });
+        return assignedMission;
     };
 
     const assignFamilyMissionsToOperator = (pedidoId: string, familia: string, operadorId: string): { success: boolean; missions?: Missao[]; message?: string } => {
         const skusInFamily = skus.filter(s => s.familia === familia).map(s => s.id);
-
-        const missionsToAssign = missoes.filter(m =>
-            m.pedidoId === pedidoId &&
-            m.status === 'Pendente' &&
-            m.tipo === MissaoTipo.PICKING &&
-            skusInFamily.includes(m.skuId)
-        );
-
-        if (missionsToAssign.length === 0) {
-            return { success: false, message: 'Nenhuma missão pendente encontrada para esta família.' };
-        }
+        let assignedMissions: Missao[] = [];
         
-        // Concurrency check
-        const alreadyAssigned = missoes.some(m => m.operadorId && missionsToAssign.map(ma => ma.id).includes(m.id));
-        if (alreadyAssigned) {
-            return { success: false, message: 'Missões para esta família já foram atribuídas a outro operador.' };
-        }
+        setMissoes(prevMissoes => {
+            const missionsToAssign = prevMissoes.filter(m =>
+                m.pedidoId === pedidoId &&
+                m.status === 'Pendente' &&
+                m.tipo === MissaoTipo.PICKING &&
+                skusInFamily.includes(m.skuId)
+            );
 
-        const assignedMissionIds = new Set(missionsToAssign.map(m => m.id));
-        const updatedMissions = missionsToAssign.map(m => ({ ...m, status: 'Atribuída' as const, operadorId }));
+            if (missionsToAssign.length === 0) {
+                return prevMissoes;
+            }
+            
+            const alreadyAssigned = missionsToAssign.some(m => m.operadorId);
+            if (alreadyAssigned) {
+                return prevMissoes;
+            }
+            
+            assignedMissions = missionsToAssign.map(m => ({ ...m, status: 'Atribuída' as const, operadorId }));
+            const assignedIds = new Set(assignedMissions.map(m => m.id));
 
-        setMissoes(prev =>
-            prev.map(m => {
-                const updated = updatedMissions.find(um => um.id === m.id);
+            return prevMissoes.map(m => {
+                const updated = assignedMissions.find(um => um.id === m.id);
                 return updated || m;
-            })
-        );
+            });
+        });
         
-        return { success: true, missions: updatedMissions };
+        if (assignedMissions.length > 0) {
+            return { success: true, missions: assignedMissions };
+        } else {
+            return { success: false, message: 'Nenhuma missão pendente encontrada ou já atribuída.' };
+        }
     };
 
     const getMyActivePickingGroup = (operadorId: string): Missao[] | null => {
@@ -740,7 +765,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Pallet Consolidado Management
     const addPalletConsolidado = (pallet: Omit<PalletConsolidado, 'id'>) => {
         const newPallet = { ...pallet, id: `PALLET-${generateId()}` };
-        setPalletsConsolidados([...palletsConsolidados, newPallet]);
+        setPalletsConsolidados(prev => [...prev, newPallet]);
         return newPallet;
     };
 
@@ -823,6 +848,40 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: true };
     };
     
+    // Tipos de Bloqueio Management
+    const addTipoBloqueio = (tipoData: Omit<TipoBloqueio, 'id'>) => {
+        const existing = tiposBloqueio.find(tb => tb.codigo.toLowerCase() === tipoData.codigo.toLowerCase());
+        if (existing) {
+            return { success: false, message: 'Já existe um tipo de bloqueio com este código.' };
+        }
+        const newTipo = { ...tipoData, id: generateId() };
+        setTiposBloqueio(prev => [...prev, newTipo]);
+        return { success: true };
+    };
+
+    const updateTipoBloqueio = (updatedTipo: TipoBloqueio) => {
+        const existing = tiposBloqueio.find(tb => tb.codigo.toLowerCase() === updatedTipo.codigo.toLowerCase() && tb.id !== updatedTipo.id);
+        if (existing) {
+            return { success: false, message: 'Já existe um tipo de bloqueio com este código.' };
+        }
+        setTiposBloqueio(prev => prev.map(tb => tb.id === updatedTipo.id ? updatedTipo : tb));
+        return { success: true };
+    };
+
+    const deleteTipoBloqueio = (id: string) => {
+        const isInUseInSkus = skus.some(s => s.motivoBloqueio === id);
+        const isInUseInEnderecos = enderecos.some(e => e.motivoBloqueio === id);
+        const isInUseInEtiquetas = etiquetas.some(et => et.motivoBloqueio === id);
+        
+        if (isInUseInSkus || isInUseInEnderecos || isInUseInEtiquetas) {
+            return { success: false, message: 'Este tipo de bloqueio está em uso e não pode ser excluído.' };
+        }
+
+        setTiposBloqueio(prev => prev.filter(tb => tb.id !== id));
+        return { success: true };
+    };
+
+
     // Inventory Count Management
     const startInventoryCount = (filters: InventoryCountSession['filters'], locations: Endereco[]): InventoryCountSession => {
         const newSession: InventoryCountSession = {
@@ -844,7 +903,6 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         setInventoryCountItems(prev => [...prev, newItem]);
         
-        // Update session progress
         setInventoryCountSessions(prev => prev.map(session => {
             if (session.id === itemData.sessionId) {
                 return { ...session, locationsCounted: session.locationsCounted + 1 };
@@ -854,15 +912,16 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     const undoLastCount = (sessionId: string) => {
-        const sessionItems = inventoryCountItems
-            .filter(item => item.sessionId === sessionId)
-            .sort((a, b) => new Date(b.countedAt).getTime() - new Date(a.countedAt).getTime());
+        setInventoryCountItems(prev => {
+            const sessionItems = prev
+                .filter(item => item.sessionId === sessionId)
+                .sort((a, b) => new Date(b.countedAt).getTime() - new Date(a.countedAt).getTime());
 
-        if (sessionItems.length === 0) return;
+            if (sessionItems.length === 0) return prev;
 
-        const lastItemId = sessionItems[0].id;
-        
-        setInventoryCountItems(prev => prev.filter(item => item.id !== lastItemId));
+            const lastItemId = sessionItems[0].id;
+            return prev.filter(item => item.id !== lastItemId);
+        });
 
         setInventoryCountSessions(prev => prev.map(session => {
             if (session.id === sessionId) {
@@ -895,6 +954,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
         users, addUser, updateUser, deleteUser,
         profiles, addProfile, updateProfile, deleteProfile,
+        tiposBloqueio, addTipoBloqueio, updateTipoBloqueio, deleteTipoBloqueio,
         inventoryCountSessions, inventoryCountItems, startInventoryCount, recordCountItem, undoLastCount, finishInventoryCount, getCountItemsBySession
     };
 

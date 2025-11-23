@@ -38,14 +38,18 @@ const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({ etiqueta, onClo
 
     const handleConfirm = () => {
         setError('');
+        const quantityToMove = Number(quantidade);
+
         if (!destinoId) {
             setError('Por favor, selecione um endereço de destino.');
             return;
         }
-        if (quantidade === '' || quantidade <= 0 || quantidade > (etiqueta.quantidadeCaixas || 0)) {
+        
+        if (!(quantityToMove > 0 && quantityToMove <= (etiqueta.quantidadeCaixas || 0))) {
             setError(`A quantidade deve ser entre 1 e ${etiqueta.quantidadeCaixas}.`);
             return;
         }
+        
         if (!sourceSku || !sourceEndereco) {
             setError('Erro: não foi possível encontrar o SKU ou endereço de origem.');
             return;
@@ -55,7 +59,7 @@ const ReplenishmentModal: React.FC<ReplenishmentModalProps> = ({ etiqueta, onClo
             tipo: MissaoTipo.REABASTECIMENTO,
             etiquetaId: etiqueta.id,
             skuId: sourceSku.id,
-            quantidade,
+            quantidade: quantityToMove,
             origemId: sourceEndereco.id,
             destinoId: destinoId,
         });

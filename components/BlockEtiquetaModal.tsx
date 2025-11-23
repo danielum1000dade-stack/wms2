@@ -1,20 +1,24 @@
+
 import React, { useState } from 'react';
-import { Etiqueta } from '../types';
+import { Etiqueta, TipoBloqueio, BloqueioAplicaA } from '../types';
 import { useWMS } from '../context/WMSContext';
 
 interface BlockEtiquetaModalProps {
     etiqueta: Etiqueta;
     onSave: (etiqueta: Etiqueta) => void;
     onClose: () => void;
+    tiposBloqueio: TipoBloqueio[];
 }
 
-const BlockEtiquetaModal: React.FC<BlockEtiquetaModalProps> = ({ etiqueta, onSave, onClose }) => {
+const BlockEtiquetaModal: React.FC<BlockEtiquetaModalProps> = ({ etiqueta, onSave, onClose, tiposBloqueio }) => {
     const { skus } = useWMS();
     const sku = skus.find(s => s.id === etiqueta.skuId);
 
     const [isBlocked, setIsBlocked] = useState(etiqueta.isBlocked || false);
     const [motivo, setMotivo] = useState(etiqueta.motivoBloqueio || '');
     const [error, setError] = useState('');
+
+    const tiposBloqueioParaPallet = tiposBloqueio.filter(tb => tb.aplicaA.includes(BloqueioAplicaA.PALLET));
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -58,14 +62,18 @@ const BlockEtiquetaModal: React.FC<BlockEtiquetaModalProps> = ({ etiqueta, onSav
                     {isBlocked && (
                         <div>
                             <label htmlFor="motivo" className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
-                            <textarea
+                            <select
                                 id="motivo"
                                 value={motivo}
                                 onChange={(e) => setMotivo(e.target.value)}
-                                rows={3}
                                 required
-                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"
-                            />
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white"
+                            >
+                                <option value="" disabled>Selecione um motivo...</option>
+                                {tiposBloqueioParaPallet.map(tb => (
+                                     <option key={tb.id} value={tb.id} title={tb.descricao}>{tb.codigo} - {tb.descricao}</option>
+                                ))}
+                            </select>
                         </div>
                     )}
                     

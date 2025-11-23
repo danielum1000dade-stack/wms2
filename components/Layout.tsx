@@ -1,5 +1,6 @@
 
 
+
 import React, { useState } from 'react';
 // FIX: Imported Outlet from react-router-dom to render nested routes.
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
@@ -9,7 +10,8 @@ interface LayoutProps {
     onLogout: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ onLogout, children }) => {
+// FIX: Removed `children` from props as it's not passed directly when using react-router v6 layout routes. Child components are rendered via `<Outlet />`.
+const Layout: React.FC<LayoutProps> = ({ onLogout }) => {
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const location = useLocation();
 

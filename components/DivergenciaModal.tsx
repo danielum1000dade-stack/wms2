@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Recebimento, Divergencia, DivergenciaTipo, SKU } from '../types';
@@ -11,13 +12,16 @@ interface DivergenciaModalProps {
 }
 
 const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClose }) => {
+    // FIX: Added `industrias` and `tiposBloqueio` to context destructuring to pass to SKUModal.
     const { 
         skus,
         addSku, 
         getDivergenciasByRecebimento, 
         addDivergencia, 
         deleteDivergencia, 
-        updateRecebimento 
+        updateRecebimento,
+        industrias,
+        tiposBloqueio
     } = useWMS();
     
     const divergenciasAtuais = getDivergenciasByRecebimento(recebimento.id);
@@ -192,6 +196,9 @@ const DivergenciaModal: React.FC<DivergenciaModalProps> = ({ recebimento, onClos
                 sku={{ sku: skuInput }}
                 onSave={handleSaveNewSku}
                 onClose={() => setIsSkuModalOpen(false)}
+                // FIX: Passed missing `industrias` and `tiposBloqueio` props.
+                industrias={industrias}
+                tiposBloqueio={tiposBloqueio}
             />
         )}
         </>

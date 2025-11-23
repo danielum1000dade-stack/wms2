@@ -1,8 +1,18 @@
+
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Pedido } from '../types';
 import ImportExcelModal from '../components/ImportExcelModal';
 import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon } from '@heroicons/react/24/outline';
+
+// FIX: Defined ColumnConfig interface locally to ensure type safety for excel import configurations.
+interface ColumnConfig {
+    [key: string]: {
+        type: 'string' | 'number';
+        required: boolean;
+        enum?: string[];
+    };
+}
 
 const PedidosPage: React.FC = () => {
     const { pedidos, processTransportData, generateMissionsForPedido } = useWMS();
@@ -21,7 +31,8 @@ const PedidosPage: React.FC = () => {
         setTimeout(() => setFeedback(null), 5000);
     }
 
-    const columnConfig = {
+    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
+    const columnConfig: ColumnConfig = {
         'Nº transporte': { type: 'string', required: true },
         'Cód.Item': { type: 'string', required: true },
         'Descrição do Produto': { type: 'string', required: true },

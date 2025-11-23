@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus, EtiquetaStatus } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon } from '@heroicons/react/24/outline';
+import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus, EtiquetaStatus, TipoBloqueio, BloqueioAplicaA } from '../types';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon, NoSymbolIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
 import UserModal from '../components/UserModal';
@@ -10,6 +11,15 @@ import BlockSKUModal from '../components/BlockSKUModal';
 
 
 declare const XLSX: any;
+
+// FIX: Defined ColumnConfig interface locally to ensure type safety for excel import configurations.
+interface ColumnConfig {
+    [key: string]: {
+        type: 'string' | 'number';
+        required: boolean;
+        enum?: string[];
+    };
+}
 
 const CadastroPage: React.FC = () => {
     const [activeTab, setActiveTab] = useState('enderecos');
@@ -32,6 +42,7 @@ const CadastroPage: React.FC = () => {
                     <TabButton tabName="enderecos" label="Endereços" icon={MapIcon} />
                     <TabButton tabName="skus" label="SKUs" icon={ArchiveBoxIcon} />
                     <TabButton tabName="industrias" label="Indústrias" icon={BuildingOffice2Icon} />
+                    <TabButton tabName="bloqueios" label="Tipos de Bloqueio" icon={NoSymbolIcon} />
                     <TabButton tabName="importar_estoque" label="Importar Estoque" icon={ArrowUpTrayIcon} />
                     <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
                     <TabButton tabName="perfis" label="Perfis de Acesso" icon={ShieldCheckIcon} />
@@ -40,6 +51,7 @@ const CadastroPage: React.FC = () => {
                     {activeTab === 'enderecos' && <CadastroEnderecos />}
                     {activeTab === 'skus' && <CadastroSKUs />}
                     {activeTab === 'industrias' && <CadastroIndustrias />}
+                    {activeTab === 'bloqueios' && <CadastroTiposBloqueio />}
                     {activeTab === 'importar_estoque' && <ImportarEstoqueInicial />}
                     {activeTab === 'usuarios' && <CadastroUsuarios />}
                     {activeTab === 'perfis' && <CadastroPerfis />}
@@ -52,7 +64,7 @@ const CadastroPage: React.FC = () => {
 
 // CadastroEnderecos Component
 const CadastroEnderecos: React.FC = () => {
-    const { enderecos, addEndereco, updateEndereco, deleteEndereco, addEnderecosBatch, industrias } = useWMS();
+    const { enderecos, addEndereco, updateEndereco, deleteEndereco, addEnderecosBatch, industrias, tiposBloqueio } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentEndereco, setCurrentEndereco] = useState<Partial<Endereco> | null>(null);
@@ -92,7 +104,8 @@ const CadastroEnderecos: React.FC = () => {
         XLSX.writeFile(wb, "modelo_cadastro_enderecos.xlsx");
     };
 
-    const enderecoColumnConfig = {
+    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
+    const enderecoColumnConfig: ColumnConfig = {
         codigo: { type: 'string', required: true },
         nome: { type: 'string', required: true },
         altura: { type: 'number', required: true },
@@ -139,6 +152,7 @@ const CadastroEnderecos: React.FC = () => {
                     <tbody className="bg-white divide-y divide-gray-200">
                         {enderecos.map(e => {
                             const industria = industrias.find(i => i.id === e.industriaId);
+                            const motivo = tiposBloqueio.find(tb => tb.id === e.motivoBloqueio);
                             return (
                                 <tr key={e.id}>
                                     <td className="px-6 py-4 whitespace-nowrap">{e.codigo}</td>
@@ -154,6 +168,9 @@ const CadastroEnderecos: React.FC = () => {
                                         }`}>
                                             {e.status}
                                         </span>
+                                        {e.status === EnderecoStatus.BLOQUEADO && motivo && (
+                                            <span className="block text-xs text-red-700 mt-1" title={motivo.descricao}>{motivo.codigo}</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <button onClick={() => openModal(e)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
@@ -165,13 +182,13 @@ const CadastroEnderecos: React.FC = () => {
                     </tbody>
                 </table>
             </div>
-            {isModalOpen && <EnderecoModal endereco={currentEndereco} industrias={industrias} onSave={handleSave} onClose={closeModal} />}
+            {isModalOpen && <EnderecoModal endereco={currentEndereco} industrias={industrias} tiposBloqueio={tiposBloqueio} onSave={handleSave} onClose={closeModal} />}
             {isImportModalOpen && <ImportExcelModal title="Importar Endereços" columnConfig={enderecoColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
         </div>
     )
 }
 
-const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: Industria[], onSave: (data: any) => void, onClose: () => void }> = ({ endereco, industrias, onSave, onClose }) => {
+const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: Industria[], tiposBloqueio: TipoBloqueio[], onSave: (data: any) => void, onClose: () => void }> = ({ endereco, industrias, tiposBloqueio, onSave, onClose }) => {
     const [formData, setFormData] = useState({
         codigo: endereco?.codigo || '',
         nome: endereco?.nome || '',
@@ -187,6 +204,8 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: 
         sre5: endereco?.sre5 || '',
         industriaId: endereco?.industriaId || '',
     });
+    
+    const tiposBloqueioParaEndereco = tiposBloqueio.filter(tb => tb.aplicaA.includes(BloqueioAplicaA.ENDERECO));
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -252,9 +271,14 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: 
                     {formData.status === EnderecoStatus.BLOQUEADO && (
                         <div>
                             <label htmlFor="motivoBloqueio" className="block text-sm font-medium text-gray-700">Motivo do Bloqueio</label>
-                            <textarea name="motivoBloqueio" id="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} rows={2}
+                            <select name="motivoBloqueio" id="motivoBloqueio" value={formData.motivoBloqueio} onChange={handleChange} required
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"
-                            ></textarea>
+                            >
+                                <option value="" disabled>Selecione um motivo...</option>
+                                {tiposBloqueioParaEndereco.map(tb => (
+                                    <option key={tb.id} value={tb.id} title={tb.descricao}>{tb.codigo} - {tb.descricao}</option>
+                                ))}
+                            </select>
                         </div>
                     )}
 
@@ -294,7 +318,7 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: 
 
 // CadastroSKUs Component
 const CadastroSKUs: React.FC = () => {
-    const { skus, addSku, updateSku, deleteSku, addSkusBatch, industrias } = useWMS();
+    const { skus, addSku, updateSku, deleteSku, addSkusBatch, industrias, tiposBloqueio } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentSku, setCurrentSku] = useState<Partial<SKU> | null>(null);
@@ -396,7 +420,8 @@ const CadastroSKUs: React.FC = () => {
         XLSX.writeFile(wb, "modelo_cadastro_skus.xlsx");
     };
 
-    const skuColumnConfig = {
+    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
+    const skuColumnConfig: ColumnConfig = {
         sku: { type: 'string', required: true },
         descritivo: { type: 'string', required: true },
         totalCaixas: { type: 'number', required: true },
@@ -447,6 +472,7 @@ const CadastroSKUs: React.FC = () => {
                      <tbody className="bg-white divide-y divide-gray-200">
                         {skus.map(s => {
                             const industria = industrias.find(i => i.id === s.industriaId);
+                            const motivo = tiposBloqueio.find(tb => tb.id === s.motivoBloqueio);
                             return (
                                 <tr key={s.id} className={s.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : ''}>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.sku}</td>
@@ -459,6 +485,9 @@ const CadastroSKUs: React.FC = () => {
                                         }`}>
                                             {s.status}
                                         </span>
+                                        {s.status === SKUStatus.BLOQUEADO && motivo && (
+                                            <span className="block text-xs text-red-700 mt-1" title={motivo.descricao}>{motivo.codigo}</span>
+                                        )}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <button onClick={() => openBlockModal(s)} className="text-gray-500 hover:text-gray-800" title="Bloquear/Desbloquear SKU"><LockClosedIcon className="h-5 w-5" /></button>
@@ -471,9 +500,9 @@ const CadastroSKUs: React.FC = () => {
                     </tbody>
                 </table>
             </div>
-            {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} industrias={industrias} />}
+            {isModalOpen && <SKUModal sku={currentSku} onSave={handleSave} onClose={closeModal} industrias={industrias} tiposBloqueio={tiposBloqueio} />}
             {isImportModalOpen && <ImportExcelModal title="Importar SKUs" columnConfig={skuColumnConfig} onImport={handleImport} onClose={() => setIsImportModalOpen(false)} />}
-            {isBlockModalOpen && skuToBlock && <BlockSKUModal sku={skuToBlock} onSave={handleSaveStatus} onClose={closeBlockModal} />}
+            {isBlockModalOpen && skuToBlock && <BlockSKUModal sku={skuToBlock} onSave={handleSaveStatus} onClose={closeBlockModal} tiposBloqueio={tiposBloqueio} />}
         </div>
     )
 }
@@ -529,7 +558,8 @@ const CadastroIndustrias: React.FC = () => {
         XLSX.writeFile(wb, "modelo_cadastro_industrias.xlsx");
     };
 
-    const industriaColumnConfig = {
+    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
+    const industriaColumnConfig: ColumnConfig = {
         nome: { type: 'string', required: true },
     };
 
@@ -610,6 +640,158 @@ const IndustriaModal: React.FC<{ industria: Partial<Industria> | null, onSave: (
     )
 }
 
+// CadastroTiposBloqueio Component
+const CadastroTiposBloqueio: React.FC = () => {
+    const { tiposBloqueio, addTipoBloqueio, updateTipoBloqueio, deleteTipoBloqueio } = useWMS();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [currentTipoBloqueio, setCurrentTipoBloqueio] = useState<Partial<TipoBloqueio> | null>(null);
+    const [error, setError] = useState('');
+
+    const openModal = (tipo: Partial<TipoBloqueio> | null = null) => {
+        setCurrentTipoBloqueio(tipo || { aplicaA: [] });
+        setIsModalOpen(true);
+        setError('');
+    };
+
+    const closeModal = () => {
+        setCurrentTipoBloqueio(null);
+        setIsModalOpen(false);
+    };
+
+    const handleSave = (formData: Omit<TipoBloqueio, 'id'>) => {
+        let result: { success: boolean, message?: string };
+        if (currentTipoBloqueio && 'id' in currentTipoBloqueio) {
+            result = updateTipoBloqueio({ ...currentTipoBloqueio, ...formData } as TipoBloqueio);
+        } else {
+            result = addTipoBloqueio(formData);
+        }
+        
+        if (result.success) {
+            closeModal();
+        } else {
+            setError(result.message || 'Ocorreu um erro desconhecido.');
+        }
+    };
+    
+    const handleDelete = (tipo: TipoBloqueio) => {
+        if(window.confirm(`Tem certeza que deseja excluir o tipo de bloqueio "${tipo.codigo}"?`)) {
+            const result = deleteTipoBloqueio(tipo.id);
+            if (!result.success) {
+                alert(result.message);
+            }
+        }
+    };
+    
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Gerenciar Tipos de Bloqueio</h2>
+                <button onClick={() => openModal()} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow hover:bg-indigo-700">
+                    <PlusIcon className="h-5 w-5 mr-2" /> Novo Tipo
+                </button>
+            </div>
+             <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Código</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descrição</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aplica-se a</th>
+                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
+                        </tr>
+                    </thead>
+                     <tbody className="bg-white divide-y divide-gray-200">
+                        {tiposBloqueio.map(tb => (
+                            <tr key={tb.id}>
+                                <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{tb.codigo}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{tb.descricao}</td>
+                                <td className="px-6 py-4 whitespace-nowrap">{tb.aplicaA.join(', ')}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <button onClick={() => openModal(tb)} className="text-indigo-600 hover:text-indigo-900"><PencilIcon className="h-5 w-5" /></button>
+                                    <button onClick={() => handleDelete(tb)} className="text-red-600 hover:text-red-900 ml-4"><TrashIcon className="h-5 w-5" /></button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            {isModalOpen && <TipoBloqueioModal tipoBloqueio={currentTipoBloqueio} onSave={handleSave} onClose={closeModal} serverError={error} />}
+        </div>
+    )
+}
+
+const TipoBloqueioModal: React.FC<{ tipoBloqueio: Partial<TipoBloqueio> | null, onSave: (data: any) => void, onClose: () => void, serverError?: string }> = ({ tipoBloqueio, onSave, onClose, serverError }) => {
+    const [formData, setFormData] = useState({
+        codigo: tipoBloqueio?.codigo || '',
+        descricao: tipoBloqueio?.descricao || '',
+        aplicaA: tipoBloqueio?.aplicaA || [],
+    });
+    const [error, setError] = useState('');
+
+    const handleAplicaAChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { value, checked } = e.target;
+        const valueAsEnum = value as BloqueioAplicaA;
+        
+        setFormData(prev => {
+            const newAplicaA = checked
+                ? [...prev.aplicaA, valueAsEnum]
+                : prev.aplicaA.filter(item => item !== valueAsEnum);
+            return { ...prev, aplicaA: newAplicaA };
+        });
+    }
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        if (!formData.codigo || !formData.descricao) {
+            setError('Código e Descrição são obrigatórios.');
+            return;
+        }
+        if (formData.aplicaA.length === 0) {
+            setError('Selecione ao menos uma aplicação para o bloqueio.');
+            return;
+        }
+        onSave(formData);
+    }
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+                <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">{tipoBloqueio?.id ? 'Editar' : 'Novo'} Tipo de Bloqueio</h3>
+                {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+                {serverError && <p className="text-red-500 text-sm mb-2">{serverError}</p>}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Código</label>
+                        <input type="text" name="codigo" value={formData.codigo} onChange={(e) => setFormData(f => ({...f, codigo: e.target.value}))} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Descrição</label>
+                        <input type="text" name="descricao" value={formData.descricao} onChange={(e) => setFormData(f => ({...f, descricao: e.target.value}))} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Aplica-se a</label>
+                        <div className="mt-2 space-y-2">
+                            {Object.values(BloqueioAplicaA).map(value => (
+                                <div key={value} className="flex items-center">
+                                    <input id={`aplicaA-${value}`} name="aplicaA" type="checkbox" value={value}
+                                        checked={formData.aplicaA.includes(value)}
+                                        onChange={handleAplicaAChange}
+                                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" />
+                                    <label htmlFor={`aplicaA-${value}`} className="ml-3 block text-sm font-medium text-gray-700">{value}</label>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex justify-end space-x-2 pt-4">
+                        <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
+                        <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Salvar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    )
+}
 
 // CadastroUsuarios Component
 const CadastroUsuarios: React.FC = () => {
@@ -800,7 +982,8 @@ const ImportarEstoqueInicial: React.FC = () => {
         XLSX.writeFile(wb, "modelo_importacao_estoque.xlsx");
     };
 
-    const columnConfig = {
+    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
+    const columnConfig: ColumnConfig = {
         endereco: { type: 'string', required: true },
         sku: { type: 'string', required: true },
         lote: { type: 'string', required: true },
