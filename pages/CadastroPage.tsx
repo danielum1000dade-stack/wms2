@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { SKU, Endereco, EnderecoTipo, Industria, EnderecoStatus, User, UserStatus, Profile, Permission, permissionLabels, SKUStatus, EtiquetaStatus, TipoBloqueio, BloqueioAplicaA } from '../types';
-import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon, NoSymbolIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PencilIcon, TrashIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, UserGroupIcon, ShieldCheckIcon, MapIcon, ArchiveBoxIcon, BuildingOffice2Icon, LockClosedIcon, NoSymbolIcon, Cog8ToothIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
 import ImportExcelModal from '../components/ImportExcelModal';
 import UserModal from '../components/UserModal';
@@ -46,6 +46,7 @@ const CadastroPage: React.FC = () => {
                     <TabButton tabName="importar_estoque" label="Importar Estoque" icon={ArrowUpTrayIcon} />
                     <TabButton tabName="usuarios" label="Usuários" icon={UserGroupIcon} />
                     <TabButton tabName="perfis" label="Perfis de Acesso" icon={ShieldCheckIcon} />
+                    <TabButton tabName="configuracoes" label="Configurações" icon={Cog8ToothIcon} />
                 </div>
                 <div>
                     {activeTab === 'enderecos' && <CadastroEnderecos />}
@@ -55,6 +56,7 @@ const CadastroPage: React.FC = () => {
                     {activeTab === 'importar_estoque' && <ImportarEstoqueInicial />}
                     {activeTab === 'usuarios' && <CadastroUsuarios />}
                     {activeTab === 'perfis' && <CadastroPerfis />}
+                    {activeTab === 'configuracoes' && <ConfiguracoesOperacionais />}
                 </div>
             </div>
         </div>
@@ -1082,5 +1084,34 @@ const ImportarEstoqueInicial: React.FC = () => {
         </div>
     );
 };
+
+const ConfiguracoesOperacionais: React.FC = () => {
+    const { pickingConfig, setPickingConfig } = useWMS();
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold">Configurações Operacionais</h2>
+            <div className="bg-gray-50 p-4 rounded-lg border">
+                <h3 className="font-medium text-gray-800 mb-2">Separação (Picking)</h3>
+                <div className="flex items-center">
+                    <input
+                        id="allow-any-address"
+                        type="checkbox"
+                        checked={pickingConfig.allowPickingFromAnyAddress}
+                        onChange={(e) => setPickingConfig(prev => ({ ...prev, allowPickingFromAnyAddress: e.target.checked }))}
+                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                    />
+                    <label htmlFor="allow-any-address" className="ml-2 block text-sm text-gray-900">
+                        Permitir separação de qualquer tipo de endereço
+                    </label>
+                </div>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                    Se desmarcado (padrão), o sistema só gerará missões de picking para endereços do tipo 'Picking'. Se o estoque estiver apenas em 'Armazenagem', será necessário criar uma missão de ressuprimento.
+                </p>
+            </div>
+        </div>
+    );
+};
+
 
 export default CadastroPage;

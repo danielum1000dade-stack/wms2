@@ -292,6 +292,7 @@ export enum Permission {
     MANAGE_CADASTRO_USUARIOS = 'MANAGE_CADASTRO_USUARIOS',
     MANAGE_CADASTRO_PERFIS = 'MANAGE_CADASTRO_PERFIS',
     MANAGE_CADASTRO_BLOQUEIOS = 'MANAGE_CADASTRO_BLOQUEIOS',
+    MANAGE_CONFIGURACOES = 'MANAGE_CONFIGURACOES',
     REPROCESSAR_MISSAO = 'REPROCESSAR_MISSAO',
 }
 
@@ -313,6 +314,7 @@ export const permissionLabels: Record<Permission, string> = {
     [Permission.MANAGE_CADASTRO_USUARIOS]: 'Gerenciar Usuários',
     [Permission.MANAGE_CADASTRO_PERFIS]: 'Gerenciar Perfis de Acesso',
     [Permission.MANAGE_CADASTRO_BLOQUEIOS]: 'Gerenciar Tipos de Bloqueio',
+    [Permission.MANAGE_CONFIGURACOES]: 'Gerenciar Configurações',
     [Permission.REPROCESSAR_MISSAO]: 'Refazer Separação de Pedido',
 };
 

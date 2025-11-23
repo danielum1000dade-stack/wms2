@@ -56,6 +56,10 @@ const defaultProfiles: Profile[] = [
 
 type ConfirmedQuantities = Record<string, { counted: number | '', reason?: ConferenciaErroTipo }>;
 
+interface PickingConfig {
+    allowPickingFromAnyAddress: boolean;
+}
+
 interface WMSContextType {
     skus: SKU[];
     addSku: (sku: Omit<SKU, 'id'>) => SKU;
@@ -136,6 +140,9 @@ interface WMSContextType {
     getActiveConferencia: (conferenteId: string) => { conferencia: Conferencia, pedido: Pedido } | null;
     finishConferencia: (conferenciaId: string, confirmedQuantities: ConfirmedQuantities) => { message: string };
 
+    // Picking Configuration
+    pickingConfig: PickingConfig;
+    setPickingConfig: React.Dispatch<React.SetStateAction<PickingConfig>>;
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -157,6 +164,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [tiposBloqueio, setTiposBloqueio] = useLocalStorage<TipoBloqueio[]>('wms_tipos_bloqueio', []);
     const [inventoryCountSessions, setInventoryCountSessions] = useLocalStorage<InventoryCountSession[]>('wms_inventory_sessions', []);
     const [inventoryCountItems, setInventoryCountItems] = useLocalStorage<InventoryCountItem[]>('wms_inventory_items', []);
+
+    const [pickingConfig, setPickingConfig] = useLocalStorage<PickingConfig>('wms_picking_config', {
+        allowPickingFromAnyAddress: false
+    });
 
     // Conferencia State
     const [conferencias, setConferencias] = useLocalStorage<Conferencia[]>('wms_conferencias', []);
@@ -559,7 +570,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
             let quantidadePendente = item.quantidadeCaixas;
 
-            const etiquetasDisponiveis = etiquetas.filter(e =>
+            const allAvailableEtiquetas = etiquetas.filter(e =>
                 e.skuId === sku.id &&
                 e.lote === item.lote &&
                 e.status === EtiquetaStatus.ARMAZENADA &&
@@ -570,12 +581,23 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 return dateA - dateB; 
             });
 
-            if (etiquetasDisponiveis.length === 0) {
-                errors.push(`Sem estoque disponível para o SKU ${item.sku}, Lote ${item.lote}.`);
+            const etiquetasParaMissao = pickingConfig.allowPickingFromAnyAddress
+                ? allAvailableEtiquetas
+                : allAvailableEtiquetas.filter(e => {
+                    const endereco = enderecos.find(end => end.id === e.enderecoId);
+                    return endereco && endereco.tipo === EnderecoTipo.PICKING;
+                });
+
+            if (etiquetasParaMissao.length === 0) {
+                 if (!pickingConfig.allowPickingFromAnyAddress && allAvailableEtiquetas.length > 0) {
+                    errors.push(`Sem estoque na ÁREA DE PICKING para SKU ${item.sku}, Lote ${item.lote}. É necessário ressuprimento.`);
+                } else {
+                    errors.push(`Sem estoque disponível para o SKU ${item.sku}, Lote ${item.lote}.`);
+                }
                 continue;
             }
 
-            for (const etiqueta of etiquetasDisponiveis) {
+            for (const etiqueta of etiquetasParaMissao) {
                 if (quantidadePendente <= 0) break;
                 if (!etiqueta.enderecoId) continue; 
 
@@ -588,7 +610,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 const quantidadeRetirar = Math.min(quantidadePendente, quantidadeNoPallet);
                 
                 if (quantidadeRetirar > 0) {
-                    const missionType = enderecoOrigem.tipo === EnderecoTipo.ARMAZENAGEM
+                    const missionType = (pickingConfig.allowPickingFromAnyAddress && enderecoOrigem.tipo === EnderecoTipo.ARMAZENAGEM)
                         ? MissaoTipo.REABASTECIMENTO
                         : MissaoTipo.PICKING;
 
@@ -611,7 +633,11 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
 
             if (quantidadePendente > 0) {
-                errors.push(`Estoque insuficiente para SKU ${item.sku}, Lote ${item.lote}. Faltam ${quantidadePendente} caixas.`);
+                 if (!pickingConfig.allowPickingFromAnyAddress) {
+                    errors.push(`Estoque insuficiente NA ÁREA DE PICKING para SKU ${item.sku}, Lote ${item.lote}. Faltam ${quantidadePendente} caixas.`);
+                } else {
+                    errors.push(`Estoque insuficiente para SKU ${item.sku}, Lote ${item.lote}. Faltam ${quantidadePendente} caixas.`);
+                }
             }
         }
         
@@ -1194,7 +1220,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         profiles, addProfile, updateProfile, deleteProfile,
         tiposBloqueio, addTipoBloqueio, updateTipoBloqueio, deleteTipoBloqueio,
         inventoryCountSessions, inventoryCountItems, startInventoryCount, recordCountItem, undoLastCount, finishInventoryCount, getCountItemsBySession,
-        conferencias, conferenciaItems, conferenciaErros, startConferencia, getActiveConferencia, finishConferencia
+        conferencias, conferenciaItems, conferenciaErros, startConferencia, getActiveConferencia, finishConferencia,
+        pickingConfig, setPickingConfig
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

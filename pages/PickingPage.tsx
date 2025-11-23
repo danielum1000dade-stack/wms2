@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta } from '../types';
@@ -121,9 +122,6 @@ const ActivePickingView: React.FC<{
     const { skus, enderecos } = useWMS();
 
     const allMissions = useMemo(() => activeGroup.families.flatMap(f => f.addresses.flatMap(a => a.missions)).sort((a,b) => {
-        if (a.status === 'Concluída' && b.status !== 'Concluída') return 1;
-        if (a.status !== 'Concluída' && b.status === 'Concluída') return -1;
-
         const endA = enderecos.find(e => e.id === a.origemId);
         const endB = enderecos.find(e => e.id === b.origemId);
         return (endA?.codigo || '').localeCompare(endB?.codigo || '');
@@ -137,11 +135,15 @@ const ActivePickingView: React.FC<{
     const [showSummaryModal, setShowSummaryModal] = useState(false);
 
     useEffect(() => {
-        const newCurrentIndex = allMissions.findIndex(m => m.status !== 'Concluída');
-        setCurrentIndex(newCurrentIndex === -1 ? allMissions.length : newCurrentIndex);
+        // Encontra o índice da primeira missão que não está concluída.
+        const firstPendingIndex = allMissions.findIndex(m => m.status !== 'Concluída');
+        // Se todas estiverem concluídas, o findIndex retorna -1. Nesse caso, o índice é o total de missões (fim).
+        // Caso contrário, usa o índice da primeira pendente.
+        setCurrentIndex(firstPendingIndex === -1 ? allMissions.length : firstPendingIndex);
     }, [allMissions]);
 
     useEffect(() => {
+        // Reseta o passo, o input e o erro sempre que o índice da missão atual mudar.
         setStep('SCAN_ADDRESS');
         setInputValue('');
         setError('');
@@ -351,7 +353,7 @@ const AvailablePickingList: React.FC<{
 
 
 const PickingPage: React.FC = () => {
-    const { missoes, pedidos, skus, enderecos, etiquetas, assignFamilyMissionsToOperator, getMyActivePickingGroup, updateMissionStatus, revertMissionGroup } = useWMS();
+    const { missoes, pedidos, skus, enderecos, etiquetas, assignFamilyMissionsToOperator, updateMissionStatus, revertMissionGroup } = useWMS();
     const currentUserId = 'admin_user';
 
     const [myActiveGroup, setMyActiveGroup] = useState<GroupedTransport | null>(null);
@@ -409,14 +411,32 @@ const PickingPage: React.FC = () => {
     };
     
     useEffect(() => {
-        const activeMissions = getMyActivePickingGroup(currentUserId);
-        if (activeMissions && activeMissions.length > 0) {
-            const grouped = groupAndSortMissions(activeMissions);
-            setMyActiveGroup(grouped[0] || null);
+        // 1. Find ANY mission that is currently active for the user. This tells us which group they are in.
+        const anActiveMission = missoes.find(m =>
+            m.operadorId === currentUserId &&
+            (m.status === 'Atribuída' || m.status === 'Em Andamento')
+        );
+
+        if (anActiveMission?.pedidoId) {
+            // 2. We've found an active group. Now, get ALL missions for that same group (pedidoId),
+            // including those already completed by this operator in this session.
+            // This ensures the view doesn't break as missions are completed.
+            const missionsForActiveGroup = missoes.filter(m =>
+                m.pedidoId === anActiveMission.pedidoId &&
+                m.operadorId === currentUserId
+            );
+
+            if (missionsForActiveGroup.length > 0) {
+                const grouped = groupAndSortMissions(missionsForActiveGroup);
+                setMyActiveGroup(grouped[0] || null);
+            } else {
+                setMyActiveGroup(null);
+            }
         } else {
+            // No active mission found for this user.
             setMyActiveGroup(null);
         }
-    }, [missoes, currentUserId]);
+    }, [missoes, currentUserId, pedidos, skus, enderecos]);
 
 
     const availableGroups = useMemo(() => {
