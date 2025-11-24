@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta } from '../types';
 import { ChevronDownIcon, ChevronRightIcon, ClipboardDocumentListIcon, CubeIcon, FlagIcon, InboxIcon, PlayCircleIcon, CheckCircleIcon, ArrowUturnLeftIcon, ExclamationTriangleIcon, LockClosedIcon, CameraIcon, DocumentMagnifyingGlassIcon } from '@heroicons/react/24/outline';
@@ -126,12 +126,13 @@ const ActivePickingView: React.FC<{
         return (endA?.codigo || '').localeCompare(endB?.codigo || '');
     }), [activeGroup, enderecos]);
 
-    const [step, setStep] = useState<'SCAN_ADDRESS' | 'ENTER_QUANTITY'>('SCAN_ADDRESS');
+    const [step, setStep] = useState(1); // 1 for address, 2 for quantity
     const [inputValue, setInputValue] = useState('');
     const [error, setError] = useState('');
     const [showDivergenceModal, setShowDivergenceModal] = useState(false);
     const [showSummaryModal, setShowSummaryModal] = useState(false);
     const [overrideIndex, setOverrideIndex] = useState<number | null>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     const naturalNextIndex = useMemo(() => {
         return allMissions.findIndex(m => m.status !== 'Concluída');
@@ -140,11 +141,19 @@ const ActivePickingView: React.FC<{
     const currentIndex = overrideIndex ?? (naturalNextIndex === -1 ? allMissions.length : naturalNextIndex);
     const currentMission = allMissions[currentIndex];
 
+    // Reset state when mission changes
     useEffect(() => {
-        setStep('SCAN_ADDRESS');
+        setStep(1);
         setInputValue('');
         setError('');
-    }, [currentIndex]);
+    }, [currentMission]);
+
+    useEffect(() => {
+        if (inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [step, currentMission]);
 
     const missionSku = skus.find(s => s.id === currentMission?.skuId);
     const missionAddress = enderecos.find(e => e.id === currentMission?.origemId);
@@ -152,33 +161,27 @@ const ActivePickingView: React.FC<{
 
     const handleValidation = () => {
         setError('');
-        if (!currentMission) return;
+        if (!currentMission || !missionAddress) return;
 
-        switch (step) {
-            case 'SCAN_ADDRESS':
-                if (inputValue.toUpperCase() === String(missionAddress?.codigo).toUpperCase()) {
-                    setStep('ENTER_QUANTITY');
-                    setInputValue(String(currentMission.quantidade)); 
-                } else {
-                    setError('Endereço incorreto!');
-                }
-                break;
-            case 'ENTER_QUANTITY':
-                const qty = parseInt(inputValue, 10);
-                if (!isNaN(qty) && qty >= 0 && qty <= currentMission.quantidade) {
-                     if (window.confirm(`Confirmar a coleta de ${qty} caixas do SKU ${missionSku?.sku}?`)) {
-                        setOverrideIndex(null);
-                        onCompleteMission(currentMission.id, qty);
-                    }
-                } else {
-                    setError(`Quantidade inválida. Deve ser entre 0 e ${currentMission.quantidade}.`);
-                }
-                break;
+        if (step === 1) { // Address validation
+            if (inputValue.toUpperCase() === missionAddress.codigo.toUpperCase()) {
+                setStep(2);
+                setInputValue(String(currentMission.quantidade || '')); // Pre-fill quantity
+            } else {
+                setError('Endereço incorreto. Tente novamente.');
+            }
+        } else { // Quantity validation
+            const qty = parseInt(inputValue, 10);
+            if (!isNaN(qty) && qty >= 0 && qty <= currentMission.quantidade) {
+                onCompleteMission(currentMission.id, qty);
+                // The parent component will force a re-render with a new key, resetting the state.
+            } else {
+                setError(`Quantidade inválida. Deve ser entre 0 e ${currentMission.quantidade}.`);
+            }
         }
     };
     
     const handleConfirmDivergence = (missionId: string, reason: string) => {
-        setOverrideIndex(null);
         onCompleteMission(missionId, 0, reason);
         setShowDivergenceModal(false);
     };
@@ -207,6 +210,8 @@ const ActivePickingView: React.FC<{
         );
     }
 
+    const isAddressStep = step === 1;
+
     const StepIndicator: React.FC<{ title: string, current: boolean, done: boolean, value?: string }> = ({ title, current, done, value }) => (
         <div className={`p-3 rounded-lg border-2 ${current ? 'bg-blue-50 border-blue-500' : (done ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-200')}`}>
             <h4 className={`text-sm font-bold ${current ? 'text-blue-700' : (done ? 'text-green-700' : 'text-gray-500')}`}>{title}</h4>
@@ -214,13 +219,11 @@ const ActivePickingView: React.FC<{
         </div>
     );
     
-    const inputPlaceholder = {
-        SCAN_ADDRESS: `Leia o endereço: ${missionAddress?.codigo}`,
-        ENTER_QUANTITY: `Confirme a quantidade (esperado: ${currentMission.quantidade})`
-    }[step];
+    const inputPlaceholder = isAddressStep 
+        ? `Confirme o endereço: ${missionAddress?.codigo}`
+        : `Confirme a quantidade (esperado: ${currentMission.quantidade})`;
     
-    const inputType = step === 'ENTER_QUANTITY' ? 'number' : 'text';
-
+    const inputMode = isAddressStep ? 'text' : 'numeric';
 
     return (
         <div className="bg-white p-6 rounded-lg shadow-xl border-t-4 border-indigo-500">
@@ -248,20 +251,19 @@ const ActivePickingView: React.FC<{
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* INSTRUCTION PANEL */}
                 <div className="space-y-4">
-                    <StepIndicator title="1. ENDEREÇO DE ORIGEM" current={step === 'SCAN_ADDRESS'} done={step !== 'SCAN_ADDRESS'} value={missionAddress?.codigo} />
-                    {step !== 'SCAN_ADDRESS' && (
-                        <div className="animate-fade-in">
-                            <StepIndicator title="2. PRODUTO A COLETAR" current={step === 'ENTER_QUANTITY'} done={false} />
-                            {missionSku?.foto && <img src={missionSku.foto} alt={missionSku.descritivo} className="w-full h-32 object-contain my-2 bg-gray-100 rounded"/>}
-                            <div className="p-3 bg-gray-50 rounded-lg space-y-1">
-                                <p className="text-xl font-bold">{missionSku?.descritivo}</p>
-                                <p>SKU a coletar: <span className="text-lg font-bold">{missionSku?.sku}</span></p>
-                                <p>Quantidade a coletar: <span className="text-2xl font-bold">{currentMission.quantidade}</span> caixas</p>
-                                <p>Lote: <span className="font-semibold">{missionEtiqueta?.lote || 'N/A'}</span></p>
-                                <p>Validade: <span className="font-semibold">{missionEtiqueta?.validade ? new Date(missionEtiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A'}</span></p>
-                            </div>
+                    <StepIndicator title="1. ENDEREÇO DE ORIGEM" current={isAddressStep} done={!isAddressStep} value={missionAddress?.codigo} />
+                    
+                    <div className={isAddressStep ? 'opacity-50' : 'animate-fade-in'}>
+                        <StepIndicator title="2. PRODUTO A COLETAR" current={!isAddressStep} done={false} />
+                        {missionSku?.foto && <img src={missionSku.foto} alt={missionSku.descritivo} className="w-full h-32 object-contain my-2 bg-gray-100 rounded"/>}
+                        <div className="p-3 bg-gray-50 rounded-lg space-y-1">
+                            <p className="text-xl font-bold">{missionSku?.descritivo}</p>
+                            <p>SKU a coletar: <span className="text-lg font-bold">{missionSku?.sku}</span></p>
+                            <p>Quantidade a coletar: <span className="text-2xl font-bold">{currentMission.quantidade}</span> caixas</p>
+                            <p>Lote: <span className="font-semibold">{missionEtiqueta?.lote || 'N/A'}</span></p>
+                            <p>Validade: <span className="font-semibold">{missionEtiqueta?.validade ? new Date(missionEtiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A'}</span></p>
                         </div>
-                    )}
+                    </div>
                 </div>
 
                 {/* ACTION PANEL */}
@@ -269,12 +271,13 @@ const ActivePickingView: React.FC<{
                      <div>
                         <label htmlFor="validation-input" className="text-center block text-lg font-semibold text-gray-800 mb-2">{inputPlaceholder}</label>
                         <input
+                            ref={inputRef}
                             id="validation-input"
-                            type={inputType}
+                            type="text"
+                            inputMode={inputMode}
                             value={inputValue}
                             onChange={(e) => setInputValue(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleValidation()}
-                            autoFocus
                             className="w-full text-center text-2xl font-mono p-3 border-2 border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500"
                         />
                         {error && <p className="text-red-600 text-center mt-2">{error}</p>}
@@ -282,7 +285,11 @@ const ActivePickingView: React.FC<{
                     <button onClick={handleValidation} className="w-full bg-green-600 text-white font-bold py-4 rounded-md text-lg hover:bg-green-700">
                         Confirmar
                     </button>
-                    <button onClick={() => setShowDivergenceModal(true)} className="w-full flex items-center justify-center text-sm bg-red-100 text-red-700 font-semibold py-2 rounded-md hover:bg-red-200">
+                    <button 
+                        onClick={() => setShowDivergenceModal(true)} 
+                        className="w-full flex items-center justify-center text-sm bg-red-100 text-red-700 font-semibold py-2 rounded-md hover:bg-red-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={isAddressStep}
+                    >
                         <ExclamationTriangleIcon className="h-5 w-5 mr-2" /> Reportar Divergência
                     </button>
                 </div>
@@ -436,61 +443,73 @@ const PickingPage: React.FC = () => {
         );
 
         if (allMissionsForActiveGroup.length === 0) {
-            return null; 
+            return null;
         }
-        
-        const grouped = groupAndSortMissions(allMissionsForActiveGroup, pedidos, skus, enderecos);
-        return grouped[0] || null;
 
-    }, [missoes, activePedidoId, currentUserId, pedidos, skus, enderecos]);
+        // Check if all missions are completed
+        const allCompleted = allMissionsForActiveGroup.every(m => m.status === 'Concluída');
+        if (allCompleted) {
+            return null;
+        }
+
+        const grouped = groupAndSortMissions(allMissionsForActiveGroup, pedidos, skus, enderecos);
+        return grouped.find(g => g.pedido.id === activePedidoId) || null;
+    }, [activePedidoId, missoes, pedidos, skus, enderecos, currentUserId]);
 
 
     const availableGroups = useMemo(() => {
-        const pendingMissions = missoes.filter(m =>
-            (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO) && m.status === 'Pendente'
+        const pendingMissions = missoes.filter(m => 
+            m.status === 'Pendente' && 
+            (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO)
         );
-        return groupAndSortMissions(pendingMissions, pedidos, skus, enderecos);
-    }, [missoes, pedidos, skus, enderecos]);
+        
+        const myActivePedidoId = myActiveGroup?.pedido.id;
+        const missionsForAvailable = pendingMissions.filter(m => m.pedidoId !== myActivePedidoId);
+
+        return groupAndSortMissions(missionsForAvailable, pedidos, skus, enderecos);
+    }, [missoes, pedidos, skus, enderecos, currentUserId, myActiveGroup]);
     
+
     const handleStartGroup = (pedidoId: string, familia: string) => {
-        setActivePedidoId(pedidoId);
-        assignFamilyMissionsToOperator(pedidoId, familia, currentUserId);
+        const { success } = assignFamilyMissionsToOperator(pedidoId, familia, currentUserId);
+        if(success) {
+            setActivePedidoId(pedidoId);
+        } else {
+            alert('Não foi possível iniciar a separação. As missões podem já ter sido atribuídas a outro operador.');
+        }
     };
 
     const handleCompleteMission = (missionId: string, completedQty: number, divergenceReason?: string) => {
         updateMissionStatus(missionId, 'Concluída', currentUserId, completedQty, divergenceReason);
     };
-
+    
     const handleFinishGroup = () => {
         setActivePedidoId(null);
     };
 
     const handleRevertGroup = (missionIds: string[]) => {
-        if(window.confirm("Tem certeza que deseja estornar este grupo de missões? Elas voltarão para a fila de pendentes.")) {
+        if (window.confirm("Tem certeza que deseja estornar esta missão? Ela voltará para a fila de missões pendentes.")) {
             revertMissionGroup(missionIds);
             setActivePedidoId(null);
         }
     };
 
-    return (
-        <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900">Picking (Separação de Pedidos)</h1>
-            {myActiveGroup ? (
-                <ActivePickingView
-                    activeGroup={myActiveGroup}
-                    etiquetas={etiquetas}
-                    onCompleteMission={handleCompleteMission}
-                    onFinishGroup={handleFinishGroup}
-                    onRevertGroup={handleRevertGroup}
-                />
-            ) : (
-                <AvailablePickingList
-                    availableGroups={availableGroups}
-                    onStartGroup={handleStartGroup}
-                />
-            )}
-        </div>
-    );
+    if (myActiveGroup) {
+        const remainingMissions = myActiveGroup.families
+            .flatMap(f => f.addresses.flatMap(a => a.missions))
+            .filter(m => m.status !== 'Concluída').length;
+
+        return <ActivePickingView 
+            key={`${myActiveGroup.pedido.id}-${remainingMissions}`}
+            activeGroup={myActiveGroup} 
+            etiquetas={etiquetas} 
+            onCompleteMission={handleCompleteMission} 
+            onFinishGroup={handleFinishGroup} 
+            onRevertGroup={handleRevertGroup} 
+        />;
+    }
+    
+    return <AvailablePickingList availableGroups={availableGroups} onStartGroup={handleStartGroup} />;
 };
 
 export default PickingPage;
