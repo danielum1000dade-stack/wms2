@@ -4,18 +4,22 @@ import { useWMS } from '../context/WMSContext';
 import { 
     MapPinIcon, CubeIcon, QrCodeIcon, CheckCircleIcon, 
     ArrowRightIcon, MagnifyingGlassIcon, ArrowsRightLeftIcon, 
-    ClipboardDocumentCheckIcon, XMarkIcon, ExclamationTriangleIcon,
-    HomeIcon
+    ClipboardDocumentCheckIcon, TrashIcon, ExclamationTriangleIcon,
+    HomeIcon, TruckIcon, InboxArrowDownIcon, ArrowPathIcon, StopCircleIcon
 } from '@heroicons/react/24/outline';
-import { EtiquetaStatus, EnderecoStatus, AuditActionType } from '../types';
+import { EtiquetaStatus, EnderecoStatus, AuditActionType, MissaoTipo, EnderecoTipo } from '../types';
 
 // --- TYPES & CONFIG ---
 type OperationMode = 
     | 'MENU'
+    | 'RECEBIMENTO'
     | 'PUTAWAY'
     | 'MOVIMENTACAO'
     | 'INVENTARIO'
-    | 'CONSULTA';
+    | 'CONSULTA'
+    | 'RESSUPRIMENTO'
+    | 'BAIXA_PALLET'
+    | 'PICKING_EXECUTION';
 
 type FeedbackType = 'success' | 'error' | 'neutral';
 
@@ -28,7 +32,6 @@ interface WizardStep {
     inputType: 'text' | 'number';
     bgColor: string; 
     accentColor: string; 
-    // Validation returns success status, message, and optional data updates for the context
     validate: (input: string, context: any) => { valid: boolean; message?: string; nextContext?: any; autoAdvance?: boolean };
 }
 
@@ -43,12 +46,12 @@ const MenuButton: React.FC<{
 }> = ({ label, icon: Icon, color, onClick, badge }) => (
     <button 
         onClick={onClick}
-        className="relative flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border-2 border-gray-100 transition-all active:scale-95 active:bg-gray-50 h-32 w-full"
+        className="relative flex flex-col items-center justify-center p-4 bg-white rounded-xl shadow-sm border-2 border-gray-100 transition-all active:scale-95 active:bg-gray-50 h-28 w-full"
     >
         <div className={`p-3 rounded-full mb-2 ${color.replace('text-', 'bg-').replace('600', '100')}`}>
             <Icon className={`h-8 w-8 ${color}`} />
         </div>
-        <span className="font-bold text-gray-700 text-sm leading-tight text-center">{label}</span>
+        <span className="font-bold text-gray-700 text-xs leading-tight text-center">{label}</span>
         {badge !== undefined && badge > 0 && (
             <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse shadow-sm">
                 {badge}
@@ -59,9 +62,10 @@ const MenuButton: React.FC<{
 
 const OperadorPage: React.FC = () => {
     const { 
-        etiquetas, enderecos, skus, 
+        etiquetas, enderecos, skus, missoes,
         getBestPutawayAddress, armazenarEtiqueta, 
-        getEtiquetaById, logEvent, apontarEtiqueta 
+        getEtiquetaById, logEvent, apontarEtiqueta, performFullPalletWriteOff,
+        updateMissionStatus, assignNextMission, checkReplenishmentNeeds, reportPickingShortage
     } = useWMS();
 
     const [mode, setMode] = useState<OperationMode>('MENU');
@@ -70,16 +74,13 @@ const OperadorPage: React.FC = () => {
     const [inputVal, setInputVal] = useState('');
     const [feedback, setFeedback] = useState<{ type: FeedbackType, message: string } | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    const currentUserId = 'admin_user'; // Hardcoded for prototype
 
-    // Focus management - Critical for scanner usage
+    // Focus management
     useEffect(() => {
-        const focusInput = () => {
-            if (inputRef.current) {
-                inputRef.current.focus();
-            }
-        };
+        const focusInput = () => inputRef.current?.focus();
         focusInput();
-        const interval = setInterval(focusInput, 2000); // Ensure focus stays
+        const interval = setInterval(focusInput, 2000);
         window.addEventListener('click', focusInput); 
         return () => {
             clearInterval(interval);
@@ -87,7 +88,6 @@ const OperadorPage: React.FC = () => {
         };
     }, [stepIndex, mode, feedback]);
 
-    // Reset
     const reset = () => {
         setMode('MENU');
         setStepIndex(0);
@@ -103,207 +103,299 @@ const OperadorPage: React.FC = () => {
         setFeedback(null);
     };
 
-    // --- WORKFLOW DEFINITIONS ---
+    const handleReportShortage = () => {
+        if (mode === 'PICKING_EXECUTION' && context.mission) {
+            if(confirm("Confirmar FALTA de produto? Isso irá gerar um alerta e uma missão de ressuprimento.")){
+                reportPickingShortage(context.mission.id, currentUserId);
+                setFeedback({ type: 'error', message: "FALTA REPORTADA - RESSUPRIMENTO ACIONADO" });
+                setTimeout(reset, 2000);
+            }
+        }
+    };
 
-    // 1. PUTAWAY (Armazenagem Inteligente)
-    const putawaySteps: WizardStep[] = [
+    // --- WORKFLOWS ---
+
+    // 1. RECEBIMENTO (Conferência Cega/Apontamento)
+    const recebimentoSteps: WizardStep[] = [
         {
             id: 0,
-            title: "Armazenagem",
-            prompt: "BIPE O PALLET",
-            subText: "Origem: Recebimento",
-            icon: <CubeIcon className="h-20 w-20" />,
+            title: "Recebimento",
+            prompt: "BIPE A ETIQUETA",
+            subText: "Etiqueta de Recebimento Pendente",
+            icon: <InboxArrowDownIcon className="h-20 w-20" />,
             inputType: 'text',
             bgColor: 'bg-blue-50',
             accentColor: 'text-blue-600',
             validate: (input) => {
                 const et = getEtiquetaById(input.toUpperCase());
                 if (!et) return { valid: false, message: "Etiqueta não encontrada" };
-                if (et.status !== EtiquetaStatus.APONTADA && et.status !== EtiquetaStatus.ARMAZENADA) {
-                    return { valid: false, message: `Status incorreto: ${et.status}` };
-                }
-                
-                // IA Logic: Get Suggestion
-                const suggestion = getBestPutawayAddress(et);
-                // We allow proceeding even without suggestion, but warn
-                const target = suggestion?.endereco;
-                const reason = suggestion?.reason || "Nenhuma sugestão ideal encontrada";
-
-                return { 
-                    valid: true, 
-                    nextContext: { etiqueta: et, target, reason },
-                    autoAdvance: true
-                };
-            }
-        },
-        {
-            id: 1,
-            title: "Armazenagem",
-            prompt: "VÁ PARA O DESTINO",
-            subText: (ctx) => ctx.target ? `Sugestão: ${ctx.target.codigo}` : "Escolha uma posição livre",
-            icon: <MapPinIcon className="h-20 w-20" />,
-            inputType: 'text',
-            bgColor: 'bg-yellow-50',
-            accentColor: 'text-yellow-600',
-            validate: (input, ctx) => {
-                const scannedCode = input.toUpperCase();
-                
-                const manualAddr = enderecos.find(e => e.codigo === scannedCode);
-                if (!manualAddr) return { valid: false, message: "Endereço inválido" };
-                if (manualAddr.status !== EnderecoStatus.LIVRE) return { valid: false, message: `Endereço Ocupado (${manualAddr.status})` };
-
-                // Logic execution
-                const res = armazenarEtiqueta(ctx.etiqueta.id, manualAddr.id);
-                if (!res.success) return { valid: false, message: res.message };
-
-                return { valid: true, message: "ARMAZENADO COM SUCESSO", autoAdvance: true };
-            }
-        }
-    ];
-
-    // 2. MOVIMENTAÇÃO LIVRE
-    const moveSteps: WizardStep[] = [
-        {
-            id: 0,
-            title: "Movimentação",
-            prompt: "BIPE A ORIGEM",
-            subText: "Leia o código do Pallet (LPN)",
-            icon: <ArrowsRightLeftIcon className="h-20 w-20" />,
-            inputType: 'text',
-            bgColor: 'bg-indigo-50',
-            accentColor: 'text-indigo-600',
-            validate: (input) => {
-                const et = getEtiquetaById(input.toUpperCase());
-                if (!et) return { valid: false, message: "Pallet não encontrado" };
-                if (et.status !== EtiquetaStatus.ARMAZENADA) return { valid: false, message: "Pallet não está armazenado" };
+                if (et.status !== EtiquetaStatus.PENDENTE_APONTAMENTO) return { valid: false, message: `Status incorreto: ${et.status}` };
                 return { valid: true, nextContext: { etiqueta: et }, autoAdvance: true };
             }
         },
         {
             id: 1,
-            title: "Movimentação",
-            prompt: "BIPE O DESTINO",
+            title: "Recebimento",
+            prompt: "BIPE O PRODUTO (SKU)",
             subText: (ctx) => `LPN: ${ctx.etiqueta.id}`,
-            icon: <MapPinIcon className="h-20 w-20" />,
-            inputType: 'text',
-            bgColor: 'bg-yellow-50',
-            accentColor: 'text-yellow-600',
-            validate: (input, ctx) => {
-                const addr = enderecos.find(e => e.codigo === input.toUpperCase());
-                if (!addr) return { valid: false, message: "Endereço inválido" };
-                if (addr.status !== EnderecoStatus.LIVRE) return { valid: false, message: `Ocupado: ${addr.status}` };
-
-                const res = armazenarEtiqueta(ctx.etiqueta.id, addr.id);
-                if (!res.success) return { valid: false, message: res.message };
-
-                return { valid: true, message: "MOVIMENTADO COM SUCESSO", autoAdvance: true };
-            }
-        }
-    ];
-
-    // 3. INVENTÁRIO RÁPIDO (Blind Count Simplificado)
-    const inventorySteps: WizardStep[] = [
-        {
-            id: 0,
-            title: "Inventário Rápido",
-            prompt: "BIPE O ENDEREÇO",
-            icon: <MapPinIcon className="h-20 w-20" />,
-            inputType: 'text',
-            bgColor: 'bg-purple-50',
-            accentColor: 'text-purple-600',
-            validate: (input) => {
-                const addr = enderecos.find(e => e.codigo === input.toUpperCase());
-                if (!addr) return { valid: false, message: "Endereço inexistente" };
-                return { valid: true, nextContext: { endereco: addr }, autoAdvance: true };
-            }
-        },
-        {
-            id: 1,
-            title: "Inventário Rápido",
-            prompt: "BIPE O PRODUTO",
-            subText: (ctx) => `Posição: ${ctx.endereco.codigo}`,
             icon: <QrCodeIcon className="h-20 w-20" />,
             inputType: 'text',
             bgColor: 'bg-white',
-            accentColor: 'text-purple-600',
-            validate: (input) => {
-                const et = getEtiquetaById(input.toUpperCase());
-                const s = skus.find(k => k.sku === input.toUpperCase());
-                
-                if (et) return { valid: true, nextContext: { itemType: 'LPN', itemId: et.id, skuId: et.skuId }, autoAdvance: true };
-                if (s) return { valid: true, nextContext: { itemType: 'SKU', itemId: s.sku, skuId: s.id }, autoAdvance: true };
-                
-                return { valid: false, message: "Produto não identificado" };
+            accentColor: 'text-blue-600',
+            validate: (input, ctx) => {
+                const sku = skus.find(s => s.sku === input.toUpperCase());
+                if (!sku) return { valid: false, message: "SKU não encontrado" };
+                return { valid: true, nextContext: { sku }, autoAdvance: true };
             }
         },
         {
             id: 2,
-            title: "Inventário Rápido",
-            prompt: "QTD ENCONTRADA",
-            subText: "Digite a quantidade física",
+            title: "Recebimento",
+            prompt: "DIGITE A QUANTIDADE",
+            subText: (ctx) => `SKU: ${ctx.sku.descritivo}`,
             icon: <ClipboardDocumentCheckIcon className="h-20 w-20" />,
             inputType: 'number',
             bgColor: 'bg-green-50',
             accentColor: 'text-green-600',
             validate: (input, ctx) => {
                 const qty = parseInt(input);
-                if (isNaN(qty) || qty < 0) return { valid: false, message: "Quantidade inválida" };
+                if (isNaN(qty) || qty <= 0) return { valid: false, message: "Qtd Inválida" };
+                if (qty > ctx.sku.totalCaixas) return { valid: false, message: `Máximo ${ctx.sku.totalCaixas} cx/pallet` };
                 
-                // Simple Logic: Update pallet if LPN scanned
-                if (ctx.itemType === 'LPN') {
-                    apontarEtiqueta(ctx.itemId, { quantidadeCaixas: qty });
-                }
-                
-                // FIX: Use 'Conferência' instead of 'Inventário' to match AuditLog entity type.
-                logEvent(AuditActionType.UPDATE, 'Conferência', ctx.endereco.id, `Contagem Rápida: ${ctx.itemType} ${ctx.itemId} = ${qty}`);
-                
-                return { valid: true, message: "CONTAGEM REGISTRADA", autoAdvance: true };
+                apontarEtiqueta(ctx.etiqueta.id, { skuId: ctx.sku.id, quantidadeCaixas: qty });
+                return { valid: true, message: "APONTAMENTO REALIZADO", autoAdvance: true };
             }
         }
     ];
 
-    // 4. CONSULTA RÁPIDA
-    const querySteps: WizardStep[] = [
+    // 2. PUTAWAY
+    const putawaySteps: WizardStep[] = [
         {
             id: 0,
-            title: "Consulta",
-            prompt: "BIPE O CÓDIGO",
-            subText: "LPN, Endereço ou SKU",
-            icon: <MagnifyingGlassIcon className="h-20 w-20" />,
+            title: "Armazenagem",
+            prompt: "BIPE O PALLET",
+            icon: <CubeIcon className="h-20 w-20" />,
             inputType: 'text',
-            bgColor: 'bg-gray-50',
-            accentColor: 'text-gray-600',
+            bgColor: 'bg-indigo-50',
+            accentColor: 'text-indigo-600',
             validate: (input) => {
-                const val = input.toUpperCase();
-                const et = getEtiquetaById(val);
-                const end = enderecos.find(e => e.codigo === val);
-                const sku = skus.find(s => s.sku === val);
-
-                let msg = "NADA ENCONTRADO";
-                if (et) {
-                    const s = skus.find(k => k.id === et.skuId);
-                    const loc = enderecos.find(e => e.id === et.enderecoId);
-                    msg = `LPN: ${et.id}\nSKU: ${s?.sku}\nQtd: ${et.quantidadeCaixas}\nLocal: ${loc?.codigo || 'N/A'}`;
-                } else if (end) {
-                    const stored = etiquetas.filter(e => e.enderecoId === end.id).length;
-                    msg = `Endereço: ${end.codigo}\nStatus: ${end.status}\nPallets: ${stored}`;
-                } else if (sku) {
-                    msg = `SKU: ${sku.sku}\n${sku.descritivo.substring(0,20)}\nTotal Cx: ${sku.totalCaixas}`;
-                }
-
-                return { valid: true, message: msg, autoAdvance: false }; 
+                const et = getEtiquetaById(input.toUpperCase());
+                if (!et) return { valid: false, message: "Não encontrado" };
+                if (et.status !== EtiquetaStatus.APONTADA) return { valid: false, message: "Pallet não aguarda armazenagem" };
+                
+                const suggestion = getBestPutawayAddress(et);
+                return { valid: true, nextContext: { etiqueta: et, suggestion }, autoAdvance: true };
+            }
+        },
+        {
+            id: 1,
+            title: "Armazenagem",
+            prompt: "VÁ PARA O DESTINO",
+            subText: (ctx) => ctx.suggestion ? `Sugerido: ${ctx.suggestion.endereco.codigo}` : "Escolha posição livre",
+            icon: <MapPinIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-yellow-50',
+            accentColor: 'text-yellow-600',
+            validate: (input, ctx) => {
+                const addr = enderecos.find(e => e.codigo === input.toUpperCase());
+                if (!addr) return { valid: false, message: "Endereço Inválido" };
+                
+                const res = armazenarEtiqueta(ctx.etiqueta.id, addr.id);
+                if (!res.success) return { valid: false, message: res.message };
+                return { valid: true, message: "ARMAZENADO COM SUCESSO", autoAdvance: true };
             }
         }
     ];
 
-    // --- ENGINE ---
+    // 3. BAIXA TOTAL (Destruição/Consumo)
+    const baixaSteps: WizardStep[] = [
+        {
+            id: 0,
+            title: "Baixa de Pallet",
+            prompt: "BIPE O PALLET A BAIXAR",
+            icon: <TrashIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-red-50',
+            accentColor: 'text-red-600',
+            validate: (input) => {
+                const et = getEtiquetaById(input.toUpperCase());
+                if (!et) return { valid: false, message: "Não encontrado" };
+                if (et.status !== EtiquetaStatus.ARMAZENADA) return { valid: false, message: "Pallet precisa estar armazenado" };
+                return { valid: true, nextContext: { etiqueta: et }, autoAdvance: true };
+            }
+        },
+        {
+            id: 1,
+            title: "Baixa de Pallet",
+            prompt: "MOTIVO DA BAIXA",
+            subText: "Digite: Avaria, Consumo, Perda...",
+            icon: <ExclamationTriangleIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-red-50',
+            accentColor: 'text-red-600',
+            validate: (input, ctx) => {
+                if (input.length < 3) return { valid: false, message: "Motivo muito curto" };
+                const res = performFullPalletWriteOff(ctx.etiqueta.id, input, currentUserId);
+                if (!res.success) return { valid: false, message: res.message };
+                return { valid: true, message: "PALLET BAIXADO", autoAdvance: true };
+            }
+        }
+    ];
 
+    // 4. PICKING EXECUTION
+    const pickingSteps: WizardStep[] = [
+        {
+            id: 0,
+            title: "Picking",
+            prompt: "INICIAR MISSÃO",
+            subText: "Toque para buscar a próxima tarefa",
+            icon: <ArrowPathIcon className="h-20 w-20" />,
+            inputType: 'text', // Dummy
+            bgColor: 'bg-white',
+            accentColor: 'text-indigo-600',
+            validate: (input) => {
+                const mission = assignNextMission(currentUserId);
+                if (!mission) return { valid: false, message: "Nenhuma missão disponível" };
+                
+                const addr = enderecos.find(e => e.id === mission.origemId);
+                const sku = skus.find(s => s.id === mission.skuId);
+                const et = etiquetas.find(e => e.id === mission.etiquetaId);
+                
+                return { valid: true, nextContext: { mission, addr, sku, et }, autoAdvance: true };
+            }
+        },
+        {
+            id: 1,
+            title: "Picking",
+            prompt: "VÁ PARA O ENDEREÇO",
+            subText: (ctx) => `${ctx.addr?.codigo}`,
+            icon: <MapPinIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-blue-50',
+            accentColor: 'text-blue-600',
+            validate: (input, ctx) => {
+                if (input.toUpperCase() !== ctx.addr.codigo) return { valid: false, message: "Endereço Incorreto" };
+                return { valid: true, autoAdvance: true };
+            }
+        },
+        {
+            id: 2,
+            title: "Picking",
+            prompt: "BIPE O PRODUTO",
+            subText: (ctx) => `${ctx.sku.sku} - ${ctx.sku.descritivo}`,
+            icon: <CubeIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-white',
+            accentColor: 'text-indigo-600',
+            validate: (input, ctx) => {
+                if (input.toUpperCase() !== ctx.sku.sku) return { valid: false, message: "Produto Incorreto" };
+                return { valid: true, autoAdvance: true };
+            }
+        },
+        {
+            id: 3,
+            title: "Picking",
+            prompt: "CONFIRME A QTD",
+            subText: (ctx) => `Solicitado: ${ctx.mission.quantidade} CX`,
+            icon: <ClipboardDocumentCheckIcon className="h-20 w-20" />,
+            inputType: 'number',
+            bgColor: 'bg-green-50',
+            accentColor: 'text-green-600',
+            validate: (input, ctx) => {
+                const qty = parseInt(input);
+                if (qty !== ctx.mission.quantidade) {
+                    if (qty < ctx.mission.quantidade) {
+                        // Allow partial pick but confirm
+                        return { valid: false, message: "Qtd menor. Relate falta se necessário." };
+                    }
+                    return { valid: false, message: "Qtd maior que solicitado." };
+                }
+                updateMissionStatus(ctx.mission.id, 'Concluída', currentUserId, qty);
+                return { valid: true, message: "TAREFA CONCLUÍDA", autoAdvance: true };
+            }
+        }
+    ];
+
+    // 5. RESSUPRIMENTO
+    const replenishmentSteps: WizardStep[] = [
+        {
+            id: 0,
+            title: "Ressuprimento",
+            prompt: "BUSCAR MISSÃO",
+            icon: <ArrowPathIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-orange-50',
+            accentColor: 'text-orange-600',
+            validate: (input) => {
+                // Find replenishment mission specifically
+                const mission = missoes.find(m => m.tipo === MissaoTipo.REABASTECIMENTO && m.status === 'Pendente');
+                if (!mission) return { valid: false, message: "Nenhum ressuprimento pendente" };
+                
+                // Assign
+                updateMissionStatus(mission.id, 'Atribuída', currentUserId);
+                
+                const origem = enderecos.find(e => e.id === mission.origemId);
+                const destino = enderecos.find(e => e.id === mission.destinoId);
+                const et = etiquetas.find(e => e.id === mission.etiquetaId);
+                const sku = skus.find(s => s.id === mission.skuId);
+
+                return { valid: true, nextContext: { mission, origem, destino, et, sku }, autoAdvance: true };
+            }
+        },
+        {
+            id: 1,
+            title: "Ressuprimento",
+            prompt: "PEGUE NO AÉREO",
+            subText: (ctx) => `Vá para: ${ctx.origem.codigo}`,
+            icon: <MapPinIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-blue-50',
+            accentColor: 'text-blue-600',
+            validate: (input, ctx) => {
+                if (input.toUpperCase() !== ctx.origem.codigo) return { valid: false, message: "Endereço Origem Incorreto" };
+                return { valid: true, autoAdvance: true };
+            }
+        },
+        {
+            id: 2,
+            title: "Ressuprimento",
+            prompt: "BIPE O PALLET",
+            subText: (ctx) => `LPN: ${ctx.et.id}`,
+            icon: <CubeIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-white',
+            accentColor: 'text-orange-600',
+            validate: (input, ctx) => {
+                if (input.toUpperCase() !== ctx.et.id) return { valid: false, message: "Pallet Incorreto" };
+                return { valid: true, autoAdvance: true };
+            }
+        },
+        {
+            id: 3,
+            title: "Ressuprimento",
+            prompt: "LEVE AO PICKING",
+            subText: (ctx) => `Destino: ${ctx.destino.codigo}`,
+            icon: <MapPinIcon className="h-20 w-20" />,
+            inputType: 'text',
+            bgColor: 'bg-yellow-50',
+            accentColor: 'text-yellow-600',
+            validate: (input, ctx) => {
+                if (input.toUpperCase() !== ctx.destino.codigo) return { valid: false, message: "Endereço Destino Incorreto" };
+                
+                updateMissionStatus(ctx.mission.id, 'Concluída', currentUserId);
+                return { valid: true, message: "RESSUPRIMENTO CONCLUÍDO", autoAdvance: true };
+            }
+        }
+    ];
+
+    // --- ENGINE SELECTION ---
     const getWorkflow = () => {
         switch (mode) {
+            case 'RECEBIMENTO': return recebimentoSteps;
             case 'PUTAWAY': return putawaySteps;
-            case 'MOVIMENTACAO': return moveSteps;
-            case 'INVENTARIO': return inventorySteps;
-            case 'CONSULTA': return querySteps;
+            case 'BAIXA_PALLET': return baixaSteps;
+            case 'PICKING_EXECUTION': return pickingSteps;
+            case 'RESSUPRIMENTO': return replenishmentSteps;
             default: return [];
         }
     };
@@ -313,10 +405,10 @@ const OperadorPage: React.FC = () => {
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inputVal.trim()) return;
+        // Picking Execution Step 0 is just a "Start" button essentially, allows empty input
+        if (!inputVal.trim() && !(mode === 'PICKING_EXECUTION' && stepIndex === 0) && !(mode === 'RESSUPRIMENTO' && stepIndex === 0)) return;
 
         setFeedback(null);
-
         const result = currentStep.validate(inputVal.trim(), context);
 
         if (result.valid) {
@@ -326,7 +418,6 @@ const OperadorPage: React.FC = () => {
             setTimeout(() => {
                 if (result.autoAdvance) {
                     if (stepIndex >= steps.length - 1) {
-                        // Cycle back to start of same workflow for efficiency
                         setStepIndex(0);
                         setContext({});
                         setFeedback(null);
@@ -335,7 +426,7 @@ const OperadorPage: React.FC = () => {
                         goToNextStep(result.nextContext);
                     }
                 }
-            }, result.message && result.message.includes('\n') ? 2500 : 800);
+            }, result.message ? 1500 : 500);
         } else {
             setFeedback({ type: 'error', message: result.message || 'Erro' });
             if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
@@ -346,40 +437,53 @@ const OperadorPage: React.FC = () => {
     // --- RENDER ---
 
     if (mode === 'MENU') {
-        const putawayCount = etiquetas.filter(e => e.status === EtiquetaStatus.APONTADA).length;
-        
         return (
             <div className="min-h-screen bg-gray-100 flex flex-col">
                 <div className="bg-white p-4 shadow-sm mb-4">
-                    <h1 className="text-xl font-extrabold text-gray-800 text-center">Modo Operador</h1>
-                    <p className="text-xs text-gray-500 text-center">Selecione a atividade</p>
+                    <h1 className="text-xl font-extrabold text-gray-800 text-center">WMS Pro Mobile</h1>
+                    <p className="text-xs text-gray-500 text-center">Selecione a operação</p>
                 </div>
                 <div className="flex-1 px-4 pb-4 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                    <div className="grid grid-cols-2 gap-3 max-w-md mx-auto">
+                        <MenuButton 
+                            label="Recebimento" 
+                            icon={InboxArrowDownIcon} 
+                            color="text-blue-600" 
+                            onClick={() => setMode('RECEBIMENTO')}
+                            badge={etiquetas.filter(e => e.status === EtiquetaStatus.PENDENTE_APONTAMENTO).length}
+                        />
                         <MenuButton 
                             label="Armazenagem" 
                             icon={CubeIcon} 
-                            color="text-blue-600" 
+                            color="text-indigo-600" 
                             onClick={() => setMode('PUTAWAY')}
-                            badge={putawayCount}
+                            badge={etiquetas.filter(e => e.status === EtiquetaStatus.APONTADA).length}
+                        />
+                        <MenuButton 
+                            label="Picking" 
+                            icon={ClipboardDocumentCheckIcon} 
+                            color="text-green-600" 
+                            onClick={() => setMode('PICKING_EXECUTION')}
+                            badge={missoes.filter(m => m.status === 'Pendente' && m.tipo === MissaoTipo.PICKING).length}
+                        />
+                        <MenuButton 
+                            label="Ressuprimento" 
+                            icon={ArrowPathIcon} 
+                            color="text-orange-600" 
+                            onClick={() => setMode('RESSUPRIMENTO')}
+                            badge={missoes.filter(m => m.status === 'Pendente' && m.tipo === MissaoTipo.REABASTECIMENTO).length}
+                        />
+                        <MenuButton 
+                            label="Baixa Pallet" 
+                            icon={TrashIcon} 
+                            color="text-red-600" 
+                            onClick={() => setMode('BAIXA_PALLET')}
                         />
                         <MenuButton 
                             label="Movimentação" 
                             icon={ArrowsRightLeftIcon} 
-                            color="text-indigo-600" 
-                            onClick={() => setMode('MOVIMENTACAO')}
-                        />
-                        <MenuButton 
-                            label="Inventário" 
-                            icon={ClipboardDocumentCheckIcon} 
-                            color="text-purple-600" 
-                            onClick={() => setMode('INVENTARIO')}
-                        />
-                        <MenuButton 
-                            label="Consulta" 
-                            icon={MagnifyingGlassIcon} 
                             color="text-gray-600" 
-                            onClick={() => setMode('CONSULTA')}
+                            onClick={() => alert("Use 'Armazenagem' para mover pallets")} // Simplified for now
                         />
                     </div>
                 </div>
@@ -389,8 +493,7 @@ const OperadorPage: React.FC = () => {
 
     const isError = feedback?.type === 'error';
     const isSuccess = feedback?.type === 'success';
-    
-    let bgClass = currentStep.bgColor;
+    let bgClass = currentStep?.bgColor || 'bg-white';
     if (isError) bgClass = 'bg-red-100';
     if (isSuccess) bgClass = 'bg-green-100';
 
@@ -401,8 +504,8 @@ const OperadorPage: React.FC = () => {
                 <button onClick={reset} className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-full">
                     <HomeIcon className="h-6 w-6" />
                 </button>
-                <h2 className="font-bold text-gray-800 text-lg uppercase tracking-wide">{currentStep.title}</h2>
-                <div className="w-8"></div> {/* Spacer for alignment */}
+                <h2 className="font-bold text-gray-800 text-lg uppercase tracking-wide">{currentStep?.title}</h2>
+                <div className="w-8"></div>
             </div>
 
             {/* Progress */}
@@ -413,7 +516,7 @@ const OperadorPage: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-hidden">
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-hidden relative">
                 {feedback ? (
                     <div className="animate-fade-in-up w-full">
                         {isError ? (
@@ -427,13 +530,13 @@ const OperadorPage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="w-full flex flex-col items-center">
-                        <div className={`p-8 rounded-full bg-white shadow-xl mb-8 ${currentStep.accentColor}`}>
-                            {currentStep.icon}
+                        <div className={`p-8 rounded-full bg-white shadow-xl mb-8 ${currentStep?.accentColor}`}>
+                            {currentStep?.icon}
                         </div>
                         <h2 className="text-4xl font-black text-gray-900 uppercase leading-none mb-4 tracking-tight">
-                            {currentStep.prompt}
+                            {currentStep?.prompt}
                         </h2>
-                        {currentStep.subText && (
+                        {currentStep?.subText && (
                             <div className="bg-white/80 backdrop-blur-sm px-6 py-3 rounded-xl border border-gray-200 shadow-sm">
                                 <p className="text-xl font-bold text-gray-700">
                                     {typeof currentStep.subText === 'function' ? currentStep.subText(context) : currentStep.subText}
@@ -442,6 +545,16 @@ const OperadorPage: React.FC = () => {
                         )}
                     </div>
                 )}
+
+                {/* Emergency Buttons */}
+                {mode === 'PICKING_EXECUTION' && stepIndex > 0 && !feedback && (
+                    <button 
+                        onClick={handleReportShortage}
+                        className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-red-100 text-red-800 px-4 py-2 rounded-full flex items-center text-sm font-bold shadow-sm hover:bg-red-200"
+                    >
+                        <StopCircleIcon className="h-5 w-5 mr-2" /> Reportar Falta
+                    </button>
+                )}
             </div>
 
             {/* Footer Input */}
@@ -449,7 +562,7 @@ const OperadorPage: React.FC = () => {
                 <form onSubmit={handleSubmit} className="relative max-w-lg mx-auto">
                     <input
                         ref={inputRef}
-                        type={currentStep.inputType}
+                        type={currentStep?.inputType || 'text'}
                         value={inputVal}
                         onChange={(e) => setInputVal(e.target.value)}
                         className={`w-full h-16 pl-4 pr-16 text-2xl font-bold border-4 rounded-xl focus:outline-none focus:ring-0 transition-all uppercase
@@ -458,11 +571,11 @@ const OperadorPage: React.FC = () => {
                               'border-indigo-600 text-gray-900'}`}
                         placeholder=""
                         autoFocus
+                        // Allow submitting empty on picking start step
                         disabled={!!feedback && feedback.type !== 'neutral'} 
                     />
                     <button 
                         type="submit"
-                        disabled={!inputVal}
                         className="absolute right-3 top-3 bottom-3 bg-indigo-600 text-white px-4 rounded-lg disabled:opacity-50 disabled:bg-gray-300 transition-colors shadow-sm"
                     >
                         <ArrowRightIcon className="h-8 w-8" />

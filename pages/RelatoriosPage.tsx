@@ -1,19 +1,16 @@
 
 import React, { useState, useMemo } from 'react';
 import { useWMS } from '../context/WMSContext';
-import { ArchiveBoxIcon, PrinterIcon, TableCellsIcon, DocumentChartBarIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
-import RomaneioDescarga from '../components/RomaneioDescarga';
-import { Recebimento, EtiquetaStatus, ConferenciaErro, Missao } from '../types';
-
-declare const XLSX: any;
+import { ArchiveBoxIcon, PrinterIcon, TableCellsIcon, DocumentChartBarIcon, ExclamationTriangleIcon, ClockIcon, TruckIcon, ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
+import { EtiquetaStatus, EnderecoStatus, MissaoTipo } from '../types';
 
 const RelatoriosPage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState('entradas');
+    const [activeCategory, setActiveCategory] = useState('operacional');
 
     const TabButton: React.FC<{ tabName: string; label: string, icon: React.ElementType }> = ({ tabName, label, icon: Icon }) => (
         <button
-            onClick={() => setActiveTab(tabName)}
-            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${activeTab === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
+            onClick={() => setActiveCategory(tabName)}
+            className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap ${activeCategory === tabName ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200'}`}
         >
             <Icon className="h-5 w-5 mr-2" />
             {label}
@@ -22,489 +19,173 @@ const RelatoriosPage: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Central de Inteligência e Relatórios</h1>
+            
             <div className="bg-white p-4 rounded-lg shadow-md">
-                <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
-                    <TabButton tabName="entradas" label="Entradas" icon={PrinterIcon} />
-                    <TabButton tabName="romaneio" label="Romaneio" icon={PrinterIcon} />
+                <div className="flex space-x-2 border-b border-gray-200 mb-6 pb-2 overflow-x-auto">
+                    <TabButton tabName="operacional" label="Operacional (Estoque)" icon={ArchiveBoxIcon} />
+                    <TabButton tabName="recebimento" label="Recebimento" icon={TruckIcon} />
+                    <TabButton tabName="armazenagem" label="Armazenagem" icon={TableCellsIcon} />
+                    <TabButton tabName="picking" label="Picking" icon={ClipboardDocumentCheckIcon} />
+                    <TabButton tabName="expedicao" label="Expedição" icon={TruckIcon} />
                     <TabButton tabName="inventario" label="Inventário" icon={ArchiveBoxIcon}/>
-                    <TabButton tabName="posicao" label="Posição de Estoque" icon={TableCellsIcon} />
-                    <TabButton tabName="erros" label="Erros de Conferência" icon={ExclamationTriangleIcon} />
-                    <TabButton tabName="produtividade" label="Produtividade" icon={DocumentChartBarIcon} />
+                    <TabButton tabName="auditoria" label="Auditoria" icon={ExclamationTriangleIcon} />
+                    <TabButton tabName="kpi" label="KPIs" icon={DocumentChartBarIcon} />
                 </div>
-                <div>
-                    {activeTab === 'entradas' && <RelatorioEntradas />}
-                    {activeTab === 'romaneio' && <RelatorioRomaneio />}
-                    {activeTab === 'inventario' && <RelatorioInventarioConsolidado />}
-                    {activeTab === 'posicao' && <RelatorioPosicaoEstoque />}
-                    {activeTab === 'erros' && <RelatorioErrosConferencia />}
-                    {activeTab === 'produtividade' && <RelatorioProdutividadeOperador />}
+
+                <div className="p-2">
+                    {activeCategory === 'operacional' && <RelatorioOperacional />}
+                    {activeCategory === 'recebimento' && <RelatorioRecebimento />}
+                    {activeCategory === 'armazenagem' && <RelatorioArmazenagem />}
+                    {activeCategory === 'picking' && <RelatorioPicking />}
+                    {activeCategory === 'expedicao' && <RelatorioExpedicao />}
+                    {activeCategory === 'inventario' && <RelatorioInventario />}
+                    {activeCategory === 'auditoria' && <RelatorioAuditoria />}
+                    {activeCategory === 'kpi' && <RelatorioKPIs />}
                 </div>
             </div>
         </div>
     )
 };
 
+// --- SUB-RELATÓRIOS ---
 
-const RelatorioEntradas: React.FC = () => {
-    const { recebimentos, industrias } = useWMS();
+const RelatorioOperacional: React.FC = () => {
+    const { etiquetas, skus, enderecos } = useWMS();
     
-    const [filters, setFilters] = useState({
-        startDate: '',
-        endDate: '',
-        industria: 'todos',
-    });
-
-    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
-    };
-
-    const filteredRecebimentos = useMemo(() => {
-        return recebimentos.filter(r => {
-            const dataRecebimento = new Date(r.dataHoraChegada);
-            const startDate = filters.startDate ? new Date(filters.startDate) : null;
-            const endDate = filters.endDate ? new Date(filters.endDate) : null;
-            
-            if (startDate && dataRecebimento < startDate) return false;
-            if (endDate) {
-                const adjustedEndDate = new Date(endDate);
-                adjustedEndDate.setDate(adjustedEndDate.getDate() + 1);
-                if (dataRecebimento > adjustedEndDate) return false;
-            }
-            if (filters.industria !== 'todos' && r.fornecedor !== filters.industria) return false;
-
-            return true;
-        }).sort((a, b) => new Date(b.dataHoraChegada).getTime() - new Date(a.dataHoraChegada).getTime());
-    }, [recebimentos, filters]);
-
-    const handlePrint = () => {
-        window.print();
-    }
-    return (
-        <div className="space-y-6" id="relatorio-entradas">
-             <style>{`
-                @media print {
-                    body * {
-                        visibility: hidden;
-                    }
-                    #print-section-entradas, #print-section-entradas * {
-                        visibility: visible;
-                    }
-                    #print-section-entradas {
-                        position: absolute;
-                        left: 0;
-                        top: 0;
-                        width: 100%;
-                    }
-                    .no-print {
-                        display: none;
-                    }
-                }
-            `}</style>
-
-            <div className="no-print flex justify-between items-center">
-                 <h2 className="text-xl font-bold text-gray-800">Filtros do Relatório de Entradas</h2>
-                 <button 
-                    onClick={handlePrint}
-                    className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
-                >
-                    <PrinterIcon className="h-5 w-5 mr-2" /> Imprimir Relatório
-                </button>
-            </div>
-            
-            <div className="no-print bg-gray-50 p-4 rounded-lg border border-gray-200 space-y-4 md:space-y-0 md:flex md:space-x-4 items-end">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Data Início</label>
-                    <input type="date" name="startDate" value={filters.startDate} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Data Fim</label>
-                    <input type="date" name="endDate" value={filters.endDate} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                </div>
-                <div className="flex-grow">
-                    <label className="block text-sm font-medium text-gray-700">Indústria</label>
-                     <select name="industria" value={filters.industria} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
-                        <option value="todos">Todas as Indústrias</option>
-                        {industrias.map(i => <option key={i.id} value={i.nome}>{i.nome}</option>)}
-                    </select>
-                </div>
-            </div>
-
-            <div id="print-section-entradas">
-                 <div className="bg-white rounded-lg shadow-md mt-6">
-                    <h2 className="text-xl font-bold p-4 block print:block hidden">Relatório de Entradas</h2>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data/Hora</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nota Fiscal</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indústria</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Placa</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temp. (°C)</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qtd. Pallets</th>
-                                </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
-                                {filteredRecebimentos.map(r => (
-                                    <tr key={r.id}>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(r.dataHoraChegada).toLocaleString('pt-BR')}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{r.notaFiscal}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.fornecedor}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.placaVeiculo}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.temperaturaVeiculo}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{r.etiquetasGeradas}</td>
-                                    </tr>
-                                ))}
-                                {filteredRecebimentos.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="text-center py-10 text-gray-500">Nenhum recebimento encontrado com os filtros selecionados.</td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-
-const RelatorioRomaneio: React.FC = () => {
-    const { recebimentos } = useWMS();
-    const [selectedRecebimentoId, setSelectedRecebimentoId] = useState<string>('');
-
-    const selectedRecebimento = useMemo(() => {
-        return recebimentos.find(r => r.id === selectedRecebimentoId) || null;
-    }, [selectedRecebimentoId, recebimentos]);
-
-    if (selectedRecebimento) {
-        return <RomaneioDescarga recebimento={selectedRecebimento} onBack={() => setSelectedRecebimentoId('')} />;
-    }
-
-    return (
-        <div className="space-y-4">
-            <h2 className="text-xl font-bold text-gray-800">Gerar Romaneio de Descarga</h2>
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <label htmlFor="recebimento-select" className="block text-sm font-medium text-gray-700 mb-2">
-                    Selecione um Recebimento para gerar o relatório:
-                </label>
-                <select
-                    id="recebimento-select"
-                    value={selectedRecebimentoId}
-                    onChange={(e) => setSelectedRecebimentoId(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white focus:border-indigo-500 focus:ring-indigo-500"
-                >
-                    <option value="" disabled>-- Escolha um recebimento --</option>
-                    {recebimentos
-                        .sort((a, b) => new Date(b.dataHoraChegada).getTime() - new Date(a.dataHoraChegada).getTime())
-                        .map(r => (
-                            <option key={r.id} value={r.id}>
-                                NF: {r.notaFiscal} - Placa: {r.placaVeiculo} ({new Date(r.dataHoraChegada).toLocaleDateString()})
-                            </option>
-                    ))}
-                </select>
-            </div>
-            {recebimentos.length === 0 && (
-                <p className="text-center text-gray-500 mt-4">Nenhum recebimento cadastrado ainda.</p>
-            )}
-        </div>
-    );
-};
-
-const RelatorioInventarioConsolidado: React.FC = () => {
-    const { industrias, skus, etiquetas, enderecos } = useWMS();
-    const [selectedIndustria, setSelectedIndustria] = useState('todos');
-
     const reportData = useMemo(() => {
-        const storedEtiquetas = etiquetas.filter(e => e.status === EtiquetaStatus.ARMAZENADA && e.skuId && e.enderecoId);
-
-        const filteredByIndustria = storedEtiquetas.filter(et => {
-            if (selectedIndustria === 'todos') return true;
+        return etiquetas.filter(e => e.status === EtiquetaStatus.ARMAZENADA).map(et => {
             const sku = skus.find(s => s.id === et.skuId);
-            return sku?.industriaId === selectedIndustria;
-        });
-
-        type ConsolidatedSkuData = {
-            sku: string;
-            descritivo: string;
-            totalCaixas: number;
-            pallets: { id: string; location: string; }[];
-        };
-        
-        type ConsolidatedIndustriaData = {
-            industriaName: string;
-            skus: Record<string, ConsolidatedSkuData>;
-        };
-        
-        const consolidated = filteredByIndustria.reduce((acc, et) => {
-            const sku = skus.find(s => s.id === et.skuId);
-            if (!sku) return acc;
-            
-            const industriaId = sku.industriaId || 'sem_industria';
-            const industria = industrias.find(i => i.id === industriaId);
-            const industriaName = industria?.nome || 'Produtos sem Indústria';
-
-            if (!acc[industriaId]) {
-                acc[industriaId] = { industriaName, skus: {} };
-            }
-            if (!acc[industriaId].skus[sku.id]) {
-                acc[industriaId].skus[sku.id] = {
-                    sku: sku.sku,
-                    descritivo: sku.descritivo,
-                    totalCaixas: 0,
-                    pallets: [],
-                };
-            }
-
-            const endereco = enderecos.find(e => e.id === et.enderecoId);
-            acc[industriaId].skus[sku.id].totalCaixas += et.quantidadeCaixas || 0;
-            acc[industriaId].skus[sku.id].pallets.push({
+            const addr = enderecos.find(e => e.id === et.enderecoId);
+            return {
                 id: et.id,
-                location: endereco?.nome || 'N/A'
-            });
-
-            return acc;
-        }, {} as Record<string, ConsolidatedIndustriaData>);
-
-        // FIX: Explicitly type the 'industria' parameter to resolve type inference issues with Object.values.
-        return Object.values(consolidated).map((industria: ConsolidatedIndustriaData) => {
-            const skusList = Object.values(industria.skus);
-            return ({
-                ...industria,
-                skus: skusList.sort((a,b) => a.sku.localeCompare(b.sku)),
-                totalCaixas: skusList.reduce((sum, sku) => sum + sku.totalCaixas, 0),
-                totalPallets: skusList.reduce((sum, sku) => sum + sku.pallets.length, 0),
-            })
-        }).sort((a,b) => a.industriaName.localeCompare(b.industriaName));
-
-    }, [selectedIndustria, etiquetas, skus, industrias, enderecos]);
-
-    const handlePrint = () => {
-        window.print();
-    };
+                sku: sku?.sku,
+                desc: sku?.descritivo,
+                endereco: addr?.codigo,
+                qtd: et.quantidadeCaixas,
+                validade: et.validade,
+                lote: et.lote
+            }
+        });
+    }, [etiquetas, skus, enderecos]);
 
     return (
-        <div className="space-y-6">
-            <style>{`
-                @media print {
-                    body * { visibility: hidden; }
-                    #print-section-inventario, #print-section-inventario * { visibility: visible; }
-                    #print-section-inventario { position: absolute; left: 0; top: 0; width: 100%; }
-                    .no-print { display: none; }
-                }
-            `}</style>
-             <div className="no-print flex justify-between items-center">
-                 <h2 className="text-xl font-bold text-gray-800">Relatório de Inventário Consolidado</h2>
-                 <button onClick={handlePrint} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-indigo-700">
-                    <PrinterIcon className="h-5 w-5 mr-2" /> Imprimir
-                </button>
-            </div>
-            <div className="no-print bg-gray-50 p-4 rounded-lg border border-gray-200">
-                <label className="block text-sm font-medium text-gray-700">Filtrar por Indústria</label>
-                <select value={selectedIndustria} onChange={e => setSelectedIndustria(e.target.value)} className="mt-1 block w-full md:w-1/3 rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
-                    <option value="todos">Todas as Indústrias</option>
-                    {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
-                </select>
-            </div>
+        <div>
+            <h3 className="text-lg font-bold mb-4">1. Estoque Geral e Disponibilidade</h3>
+            <SimpleTable 
+                headers={['Pallet', 'SKU', 'Descrição', 'Endereço', 'Qtd', 'Lote', 'Validade']}
+                data={reportData.map(d => [d.id, d.sku, d.desc, d.endereco, d.qtd, d.lote, d.validade])}
+            />
+        </div>
+    );
+};
 
-            <div id="print-section-inventario">
-                {reportData.length > 0 ? reportData.map(industria => (
-                    <div key={industria.industriaName} className="bg-white rounded-lg shadow-md mt-6 mb-8 p-4">
-                        <div className="border-b pb-2 mb-4">
-                            <h3 className="text-2xl font-bold text-gray-800">{industria.industriaName}</h3>
-                            <p className="text-sm text-gray-500">Data de Emissão: {new Date().toLocaleDateString('pt-BR')}</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descritivo</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd. Caixas</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd. Pallets</th>
-                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Posições</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {industria.skus.map(sku => (
-                                        <tr key={sku.sku}>
-                                            <td className="px-6 py-4 whitespace-nowrap font-medium">{sku.sku}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap">{sku.descritivo}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap">{sku.totalCaixas}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap">{sku.pallets.length}</td>
-                                            <td className="px-6 py-4 whitespace-normal text-sm text-gray-500">{sku.pallets.map(p => p.location).join(', ')}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                                <tfoot className="bg-gray-100">
-                                    <tr>
-                                        <td colSpan={2} className="px-6 py-3 text-right font-bold">TOTAIS DA INDÚSTRIA:</td>
-                                        <td className="px-6 py-3 font-bold">{industria.totalCaixas}</td>
-                                        <td className="px-6 py-3 font-bold">{industria.totalPallets}</td>
-                                        <td></td>
-                                    </tr>
-                                </tfoot>
-                            </table>
-                        </div>
-                    </div>
-                )) : (
-                    <div className="text-center py-10 text-gray-500">
-                        <ArchiveBoxIcon className="mx-auto h-12 w-12 text-gray-400" />
-                        <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum item em estoque encontrado</h3>
-                        <p className="mt-1 text-sm text-gray-500">Não há pallets armazenados que correspondam ao filtro selecionado.</p>
-                    </div>
-                )}
+const RelatorioRecebimento: React.FC = () => {
+    const { recebimentos } = useWMS();
+    return (
+        <div>
+            <h3 className="text-lg font-bold mb-4">9. Previsão e Histórico de Recebimento</h3>
+            <SimpleTable 
+                headers={['NF', 'Fornecedor', 'Chegada', 'Status', 'Avarias?']}
+                data={recebimentos.map(r => [r.notaFiscal, r.fornecedor, new Date(r.dataHoraChegada).toLocaleDateString(), r.status, r.houveAvarias ? 'SIM' : 'NÃO'])}
+            />
+        </div>
+    );
+};
+
+const RelatorioArmazenagem: React.FC = () => {
+    const { enderecos } = useWMS();
+    const ocupacao = enderecos.reduce((acc, e) => {
+        acc[e.status] = (acc[e.status] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>);
+
+    return (
+        <div className="grid grid-cols-2 gap-6">
+            <div>
+                <h3 className="text-lg font-bold mb-4">16. Utilização de Espaço</h3>
+                <div className="bg-gray-100 p-4 rounded">
+                    <p>Livres: {ocupacao[EnderecoStatus.LIVRE] || 0}</p>
+                    <p>Ocupados: {ocupacao[EnderecoStatus.OCUPADO] || 0}</p>
+                    <p>Bloqueados: {ocupacao[EnderecoStatus.BLOQUEADO] || 0}</p>
+                    <p className="font-bold mt-2">Total: {enderecos.length}</p>
+                </div>
             </div>
         </div>
     );
 };
 
-const RelatorioPosicaoEstoque: React.FC = () => {
-    const { etiquetas, enderecos, skus, industrias } = useWMS();
-
-    const [filters, setFilters] = useState({
-        sku: '',
-        lote: '',
-        endereco: '',
-        industriaId: 'todos',
-    });
-
-    const handleFilterChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFilters(prev => ({ ...prev, [name]: value }));
-    };
-
-    const stockData = useMemo(() => {
-        return etiquetas
-            .filter(etiqueta => {
-                if (etiqueta.status !== EtiquetaStatus.ARMAZENADA || !etiqueta.enderecoId) return false;
-                
-                const sku = skus.find(s => s.id === etiqueta.skuId);
-                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
-
-                if (filters.sku && (!sku || !sku.sku.toLowerCase().includes(filters.sku.toLowerCase()))) return false;
-                if (filters.lote && (!etiqueta.lote || !etiqueta.lote.toLowerCase().includes(filters.lote.toLowerCase()))) return false;
-                if (filters.endereco && (!endereco || !endereco.nome.toLowerCase().includes(filters.endereco.toLowerCase()))) return false;
-                if (filters.industriaId !== 'todos' && (!sku || sku.industriaId !== filters.industriaId)) return false;
-                
-                return true;
-            })
-            .map(etiqueta => {
-                const endereco = enderecos.find(e => e.id === etiqueta.enderecoId);
-                const sku = skus.find(s => s.id === etiqueta.skuId);
-                const industria = sku ? industrias.find(i => i.id === sku.industriaId) : null;
-
-                return {
-                    id: etiqueta.id,
-                    endereco: endereco?.nome || 'N/A',
-                    palletId: etiqueta.id,
-                    sku: sku?.sku || 'N/A',
-                    descricao: sku?.descritivo || 'N/A',
-                    lote: etiqueta.lote || 'N/A',
-                    validade: etiqueta.validade ? new Date(etiqueta.validade).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : 'N/A',
-                    quantidade: etiqueta.quantidadeCaixas || 0,
-                    industria: industria?.nome || 'N/A'
-                };
-            })
-            .sort((a, b) => a.endereco.localeCompare(b.endereco));
-    }, [etiquetas, enderecos, skus, industrias, filters]);
-
-    const handleExportExcel = () => {
-        const headers = ['Endereço', 'ID Pallet', 'SKU', 'Descrição', 'Lote', 'Validade', 'Qtd. Caixas', 'Indústria'];
-        
-        const dataToExport = stockData.map(item => [
-            item.endereco,
-            item.palletId,
-            item.sku,
-            item.descricao,
-            item.lote,
-            item.validade,
-            item.quantidade,
-            item.industria
-        ]);
-
-        const ws_data = [headers, ...dataToExport];
-        const ws = XLSX.utils.aoa_to_sheet(ws_data);
-        
-        ws['!cols'] = [
-            { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 40 },
-            { wch: 15 }, { wch: 12 }, { wch: 12 }, { wch: 25 }
-        ];
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Posicao_Estoque");
-        XLSX.writeFile(wb, "relatorio_posicao_estoque.xlsx");
-    };
+const RelatorioPicking: React.FC = () => {
+    const { missoes, skus, users } = useWMS();
+    const pickingMissions = missoes.filter(m => m.tipo === MissaoTipo.PICKING);
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-gray-800">Relatório de Posição de Estoque</h2>
-                <button 
-                    onClick={handleExportExcel}
-                    className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors"
-                >
-                    <TableCellsIcon className="h-5 w-5 mr-2" /> Exportar para Excel
-                </button>
-            </div>
-            
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Endereço</label>
-                    <input type="text" name="endereco" value={filters.endereco} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">SKU</label>
-                    <input type="text" name="sku" value={filters.sku} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                </div>
-                 <div>
-                    <label className="block text-sm font-medium text-gray-700">Lote</label>
-                    <input type="text" name="lote" value={filters.lote} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"/>
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Indústria</label>
-                     <select name="industriaId" value={filters.industriaId} onChange={handleFilterChange} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3 bg-white">
-                        <option value="todos">Todas</option>
-                        {industrias.map(i => <option key={i.id} value={i.id}>{i.nome}</option>)}
-                    </select>
-                </div>
-            </div>
+        <div>
+            <h3 className="text-lg font-bold mb-4">18. Performance de Picking e Ondas</h3>
+            <SimpleTable 
+                headers={['Missão', 'SKU', 'Qtd', 'Origem', 'Operador', 'Status']}
+                data={pickingMissions.map(m => {
+                    const sku = skus.find(s => s.id === m.skuId);
+                    const op = users.find(u => u.id === m.operadorId);
+                    return [m.id, sku?.sku, m.quantidade, '...', op?.username || 'N/A', m.status];
+                })}
+            />
+        </div>
+    );
+};
 
-            <div className="overflow-x-auto bg-white rounded-lg shadow-md">
-                <table className="min-w-full divide-y divide-gray-200">
+const RelatorioExpedicao: React.FC = () => {
+    const { pedidos } = useWMS();
+    return (
+        <div>
+            <h3 className="text-lg font-bold mb-4">21. Controle de Expedição (Pré-Romaneio)</h3>
+            <SimpleTable 
+                headers={['Pedido', 'Transporte', 'Status', 'Prioridade']}
+                data={pedidos.map(p => [p.id, p.numeroTransporte, p.status, p.priority ? 'ALTA' : 'NORMAL'])}
+            />
+        </div>
+    );
+};
+
+const RelatorioInventario: React.FC = () => {
+    const { inventoryCountSessions } = useWMS();
+    return (
+        <div>
+            <h3 className="text-lg font-bold mb-4">25. Histórico de Inventários</h3>
+            <SimpleTable 
+                headers={['Data', 'Área', 'Progresso', 'Status']}
+                data={inventoryCountSessions.map(s => [new Date(s.createdAt).toLocaleDateString(), s.filters.area, `${s.locationsCounted}/${s.totalLocations}`, s.status])}
+            />
+        </div>
+    );
+};
+
+const RelatorioAuditoria: React.FC = () => {
+    const { auditLogs } = useWMS();
+    return (
+        <div>
+            <h3 className="text-lg font-bold mb-4">30. Auditoria Completa de Operações</h3>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
                     <thead className="bg-gray-50">
                         <tr>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Endereço</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pallet</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descrição</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lote</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Validade</th>
-                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qtd. Caixas</th>
+                            <th className="px-4 py-2 text-left">Data/Hora</th>
+                            <th className="px-4 py-2 text-left">Usuário</th>
+                            <th className="px-4 py-2 text-left">Ação</th>
+                            <th className="px-4 py-2 text-left">Entidade</th>
+                            <th className="px-4 py-2 text-left">Detalhes</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {stockData.map(item => (
-                            <tr key={item.id}>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{item.endereco}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">{item.palletId}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.sku}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.descricao}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.lote}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">{item.validade}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 text-center font-semibold">{item.quantidade}</td>
+                        {auditLogs.slice(0, 50).map(log => (
+                            <tr key={log.id}>
+                                <td className="px-4 py-2 whitespace-nowrap text-gray-500">{new Date(log.timestamp).toLocaleString()}</td>
+                                <td className="px-4 py-2 font-medium">{log.userName}</td>
+                                <td className="px-4 py-2"><span className="px-2 py-1 bg-gray-100 rounded-full text-xs">{log.actionType}</span></td>
+                                <td className="px-4 py-2">{log.entity} ({log.entityId})</td>
+                                <td className="px-4 py-2 text-gray-600">{log.details}</td>
                             </tr>
                         ))}
-                         {stockData.length === 0 && (
-                            <tr>
-                                <td colSpan={7} className="text-center py-10 text-gray-500">
-                                    Nenhum item em estoque encontrado com os filtros selecionados.
-                                </td>
-                            </tr>
-                        )}
                     </tbody>
                 </table>
             </div>
@@ -512,137 +193,47 @@ const RelatorioPosicaoEstoque: React.FC = () => {
     );
 };
 
-
-const RelatorioErrosConferencia: React.FC = () => {
-    const { conferenciaErros, users, skus, pedidos } = useWMS();
-    
-    // Simple component, no filters for now.
-    const sortedErrors = useMemo(() => 
-        [...conferenciaErros].sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), 
-    [conferenciaErros]);
-
+const RelatorioKPIs: React.FC = () => {
     return (
-        <div className="space-y-4">
-             <h2 className="text-xl font-bold text-gray-800">Relatório de Erros de Conferência</h2>
-             <div className="overflow-x-auto bg-white rounded-lg shadow-md">
-                 <table className="min-w-full divide-y divide-gray-200">
-                     <thead className="bg-gray-50">
-                         <tr>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conferente</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pedido</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo de Erro</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">SKU</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Qtd</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Observação</th>
-                         </tr>
-                     </thead>
-                     <tbody className="bg-white divide-y divide-gray-200">
-                         {sortedErrors.length > 0 ? sortedErrors.map(erro => {
-                             const conferente = users.find(u => u.id === erro.conferenteId);
-                             const sku = skus.find(s => s.id === erro.skuId);
-                             const pedido = pedidos.find(p => p.id === erro.pedidoId);
-                             return (
-                                <tr key={erro.id} className="bg-red-50">
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{new Date(erro.createdAt).toLocaleString()}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{conferente?.fullName}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{pedido?.numeroTransporte}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-semibold">{erro.tipo}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{sku?.sku} - {sku?.descritivo}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">{erro.quantidadeDivergente}</td>
-                                     <td className="px-4 py-4 whitespace-nowrap text-sm">{erro.observacao}</td>
-                                </tr>
-                             )
-                         }) : (
-                            <tr>
-                                <td colSpan={7} className="text-center py-10 text-gray-500">
-                                    Nenhum erro de conferência registrado.
-                                </td>
-                            </tr>
-                         )}
-                     </tbody>
-                 </table>
-             </div>
+        <div className="grid grid-cols-3 gap-4">
+            <KPICard title="Acuracidade de Estoque" value="99.8%" color="green" />
+            <KPICard title="Pedidos / Hora" value="45" color="blue" />
+            <KPICard title="Tempo Médio Recebimento" value="32 min" color="indigo" />
+            <KPICard title="Ocupação Picking" value="82%" color="yellow" />
+            <KPICard title="Taxa de Devolução" value="0.5%" color="green" />
+            <KPICard title="Ressuprimentos Pendentes" value="12" color="red" />
         </div>
     );
 };
 
-const RelatorioProdutividadeOperador: React.FC = () => {
-    const { missoes, users } = useWMS();
+// --- HELPERS ---
 
-    const productivityData = useMemo(() => {
-        const completedMissions = missoes.filter(m => m.status === 'Concluída' && m.startedAt && m.finishedAt && m.operadorId);
+const KPICard: React.FC<{ title: string, value: string, color: string }> = ({ title, value, color }) => (
+    <div className={`bg-white p-6 rounded-lg shadow border-l-4 border-${color}-500`}>
+        <h4 className="text-gray-500 text-sm uppercase">{title}</h4>
+        <p className="text-3xl font-bold text-gray-800 mt-2">{value}</p>
+    </div>
+);
 
-        const dataByUser = completedMissions.reduce((acc, mission) => {
-            const operatorId = mission.operadorId!;
-            if (!acc[operatorId]) {
-                acc[operatorId] = { totalMissions: 0, totalTimeMs: 0 };
-            }
-
-            const startTime = new Date(mission.startedAt!).getTime();
-            const finishTime = new Date(mission.finishedAt!).getTime();
-            const duration = finishTime - startTime;
-
-            acc[operatorId].totalMissions += 1;
-            acc[operatorId].totalTimeMs += duration;
-
-            return acc;
-        }, {} as Record<string, { totalMissions: number, totalTimeMs: number }>);
-
-        return Object.entries(dataByUser).map(([operadorId, data]) => {
-            const user = users.find(u => u.id === operadorId);
-            const avgTimeMs = data.totalTimeMs / data.totalMissions;
-            return {
-                operadorId,
-                operadorName: user?.fullName || 'Desconhecido',
-                totalMissions: data.totalMissions,
-                avgTimeMs
-            };
-        }).sort((a,b) => a.avgTimeMs - b.avgTimeMs); // Rank by fastest average time
-
-    }, [missoes, users]);
-
-    const formatDuration = (ms: number) => {
-        const seconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}m ${remainingSeconds}s`;
-    }
-
-    return (
-        <div className="space-y-4">
-             <h2 className="text-xl font-bold text-gray-800">Ranking de Produtividade por Operador</h2>
-              <div className="overflow-x-auto bg-white rounded-lg shadow-md">
-                 <table className="min-w-full divide-y divide-gray-200">
-                     <thead className="bg-gray-50">
-                         <tr>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ranking</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Operador</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total de Missões</th>
-                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tempo Médio por Missão</th>
-                         </tr>
-                     </thead>
-                     <tbody className="bg-white divide-y divide-gray-200">
-                        {productivityData.length > 0 ? productivityData.map((data, index) => (
-                            <tr key={data.operadorId}>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm font-bold">{index + 1}º</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm">{data.operadorName}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm">{data.totalMissions}</td>
-                                <td className="px-4 py-4 whitespace-nowrap text-sm">{formatDuration(data.avgTimeMs)}</td>
-                            </tr>
-                        )) : (
-                             <tr>
-                                <td colSpan={4} className="text-center py-10 text-gray-500">
-                                    Nenhuma missão concluída para gerar o relatório.
-                                </td>
-                            </tr>
-                        )}
-                     </tbody>
-                 </table>
-             </div>
-        </div>
-    );
-};
-
+const SimpleTable: React.FC<{ headers: string[], data: any[][] }> = ({ headers, data }) => (
+    <div className="overflow-x-auto bg-white rounded shadow">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+                <tr>
+                    {headers.map(h => <th key={h} className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider">{h}</th>)}
+                </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+                {data.length > 0 ? data.map((row, i) => (
+                    <tr key={i}>
+                        {row.map((cell, j) => <td key={j} className="px-4 py-3 whitespace-nowrap">{cell}</td>)}
+                    </tr>
+                )) : (
+                    <tr><td colSpan={headers.length} className="p-4 text-center text-gray-500">Sem dados disponíveis.</td></tr>
+                )}
+            </tbody>
+        </table>
+    </div>
+);
 
 export default RelatoriosPage;

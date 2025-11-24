@@ -1,16 +1,46 @@
 
 export enum SKUStatus {
   ATIVO = 'Ativo',
-  BLOQUEADO = 'Bloqueado'
+  BLOQUEADO = 'Bloqueado',
+  DESCONTINUADO = 'Descontinuado'
+}
+
+export enum CategoriaProduto {
+  GERAL = 'Geral',
+  REFRIGERADO = 'Refrigerado',
+  CONGELADO = 'Congelado',
+  INFLAMAVEL = 'Inflamável',
+  QUIMICO = 'Químico',
+  FRAGIL = 'Frágil'
+}
+
+// Novo: Setorização para validação cruzada Endereço x SKU
+export enum SetorArmazem {
+  SECO = 'Seco',
+  RESFRIADO = 'Resfriado',
+  CONGELADO = 'Congelado',
+  INFLAMAVEL = 'Inflamável',
+  QUARENTENA = 'Quarentena'
+}
+
+export interface Dimensoes {
+  altura: number; // cm
+  largura: number; // cm
+  comprimento: number; // cm
+  pesoBruto: number; // kg
+  volumeM3: number;
 }
 
 export interface SKU {
   id: string;
   sku: string;
   descritivo: string;
-  totalCaixas: number;
-  tempoVida: number; // dias
-  peso: number; // kg
+  unidadeMedida: string; // UN, CX, KG, L
+  dimensoes: Dimensoes;
+  totalCaixas: number; // Lastro x Camada
+  tempoVida: number; // dias (Shelf Life total)
+  shelfLifeMinimoRecebimento: number; // dias
+  peso: number; // kg total do pallet
   qtdPorCamada: number;
   camadaPorLastro: number;
   sre1: string;
@@ -20,9 +50,11 @@ export interface SKU {
   sre5: string;
   classificacao: string;
   familia: string;
+  categoria: CategoriaProduto;
+  setor: SetorArmazem; // Amarração de setor
   industriaId?: string;
   status: SKUStatus;
-  motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
+  motivoBloqueio?: string;
   classificacaoABC?: 'A' | 'B' | 'C';
   foto?: string;
   temperaturaMin?: number;
@@ -32,39 +64,47 @@ export interface SKU {
 export interface Industria {
   id: string;
   nome: string;
+  cnpj?: string;
 }
 
 export enum EnderecoTipo {
-  ARMAZENAGEM = 'Armazenagem',
-  PICKING = 'Picking',
-  EXPEDICAO = 'Expedição',
-  RECEBIMENTO = 'Recebimento',
-  ANTECAMARA = 'Antecâmara'
+  ARMAZENAGEM = 'Armazenagem', // Pulmão
+  PICKING = 'Picking', // Apanha
+  EXPEDICAO = 'Expedição', // Stage Out
+  RECEBIMENTO = 'Recebimento', // Stage In
+  ANTECAMARA = 'Antecâmara',
+  DOCA = 'Doca',
+  BLOCADO = 'Blocado'
 }
 
 export enum EnderecoStatus {
   LIVRE = 'Livre',
   OCUPADO = 'Ocupado',
+  PARCIAL = 'Parcial', // Ocupado mas cabe mais
   BLOQUEADO = 'Bloqueado',
+  INVENTARIO = 'Em Inventário'
 }
 
 export interface Endereco {
   id: string;
-  codigo: string;
+  codigo: string; // Rua-Predio-Nivel-Posicao
   nome: string;
-  altura: number; // metros
+  altura: number; 
   capacidade: number; // pallets
+  pesoMaximo: number; // kg
   tipo: EnderecoTipo;
   status: EnderecoStatus;
+  setor: SetorArmazem; // Amarração de setor
   sre1?: string;
   sre2?: string;
   sre3?: string;
   sre4?: string;
   sre5?: string;
-  motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
+  categoriasPermitidas: CategoriaProduto[]; // Trava de segurança
+  motivoBloqueio?: string;
   industriaId?: string;
-  zona?: string; // Ex: "Frio", "Seco", "Inflamavel"
-  sequenciaPicking?: number; // Para ordenar a rota
+  zona?: string;
+  sequenciaPicking?: number;
 }
 
 export interface Recebimento {
@@ -94,11 +134,13 @@ export interface Recebimento {
 
 export enum EtiquetaStatus {
     PENDENTE_APONTAMENTO = 'Pendente Apontamento',
-    APONTADA = 'Apontada',
-    ARMAZENADA = 'Armazenada',
-    EM_SEPARACAO = 'Em Separação',
+    APONTADA = 'Apontada', // Gerada mas na doca
+    ARMAZENADA = 'Armazenada', // No pulmão
+    EM_SEPARACAO = 'Em Separação', // Reservada para pedido
+    PICKING = 'No Picking', // Pallet aberto no picking
     CONFERIDA = 'Conferida',
     EXPEDIDA = 'Expedida',
+    BAIXADA = 'Baixada' // Consumida ou Perda
 }
 
 export interface Etiqueta {
@@ -107,6 +149,7 @@ export interface Etiqueta {
     status: EtiquetaStatus;
     skuId?: string;
     quantidadeCaixas?: number;
+    quantidadeOriginal?: number;
     lote?: string;
     validade?: string;
     observacoes?: string;
@@ -114,9 +157,9 @@ export interface Etiqueta {
     dataApontamento?: string;
     dataArmazenagem?: string;
     dataExpedicao?: string;
-    palletConsolidadoId?: string; // Para etiquetas de expedição
+    palletConsolidadoId?: string; 
     isBlocked?: boolean;
-    motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
+    motivoBloqueio?: string;
 }
 
 export interface PedidoItem {
@@ -149,6 +192,8 @@ export enum MissaoTipo {
     MOVIMENTACAO = 'Movimentação',
     MOVIMENTACAO_PALLET = 'Movimentação de Pallet',
     TRANSFERENCIA = 'Transferência',
+    CONFERENCIA_CEGA = 'Conferência Cega',
+    INVENTARIO = 'Inventário'
 }
 
 export interface Missao {
@@ -165,15 +210,15 @@ export interface Missao {
     createdAt: string;
     startedAt?: string;
     finishedAt?: string;
-    prioridadeScore?: number; // IA Calculated Score
+    prioridadeScore?: number; 
 }
 
 export interface PalletConsolidado {
   id: string;
   pedidoId: string;
-  etiquetas: string[]; // array de IDs de etiquetas de produto
+  etiquetas: string[];
   quantidadeCaixasTotal: number;
-  skusContidos: string[]; // array de IDs de SKU
+  skusContidos: string[];
 }
 
 export enum DivergenciaTipo {
@@ -181,6 +226,7 @@ export enum DivergenciaTipo {
     FALTA = 'Falta',
     SOBRA = 'Sobra',
     ESTOQUE_INCORRETO = 'Estoque Incorreto',
+    VALIDADE_DIVERGENTE = 'Validade Divergente'
 }
 
 export enum DivergenciaFonte {
@@ -204,7 +250,6 @@ export interface Divergencia {
     createdAt: string;
 }
 
-// Tipos para o módulo de Conferência Cega
 export enum ConferenciaErroTipo {
   FALTA = 'Falta',
   SOBRA = 'Sobra',
@@ -243,7 +288,6 @@ export interface ConferenciaErro {
   createdAt: string;
 }
 
-// Inventory Count Types
 export interface InventoryCountSession {
     id: string;
     createdAt: string;
@@ -254,7 +298,7 @@ export interface InventoryCountSession {
         predio?: string;
         nivel?: string;
     };
-    countedBy?: string; // User ID
+    countedBy?: string; 
     totalLocations: number;
     locationsCounted: number;
 }
@@ -271,13 +315,12 @@ export interface InventoryCountItem {
     countedLote: string | null;
     countedValidade: string | null;
     countedQuantity: number | null;
-    discrepancy: number; // calculated: counted - expected
+    discrepancy: number; 
     countedAt: string;
     status: 'Pendente' | 'Contado' | 'Vazio' | 'Pulado';
     justification?: string;
 }
 
-// User Management Types
 export enum Permission {
     VIEW_DASHBOARD = 'VIEW_DASHBOARD',
     MANAGE_RECEBIMENTO = 'MANAGE_RECEBIMENTO',
@@ -298,6 +341,7 @@ export enum Permission {
     MANAGE_CADASTRO_BLOQUEIOS = 'MANAGE_CADASTRO_BLOQUEIOS',
     MANAGE_CONFIGURACOES = 'MANAGE_CONFIGURACOES',
     REPROCESSAR_MISSAO = 'REPROCESSAR_MISSAO',
+    BAIXA_PALLET = 'BAIXA_PALLET'
 }
 
 export const permissionLabels: Record<Permission, string> = {
@@ -320,6 +364,7 @@ export const permissionLabels: Record<Permission, string> = {
     [Permission.MANAGE_CADASTRO_BLOQUEIOS]: 'Gerenciar Tipos de Bloqueio',
     [Permission.MANAGE_CONFIGURACOES]: 'Gerenciar Configurações',
     [Permission.REPROCESSAR_MISSAO]: 'Refazer Separação de Pedido',
+    [Permission.BAIXA_PALLET]: 'Realizar Baixa Total de Pallet'
 };
 
 export interface Profile {
@@ -354,7 +399,6 @@ export interface TipoBloqueio {
   aplicaA: BloqueioAplicaA[];
 }
 
-// --- NEW: AUDIT & TRACEABILITY ---
 export enum AuditActionType {
     CREATE = 'Criação',
     UPDATE = 'Atualização',
@@ -362,7 +406,10 @@ export enum AuditActionType {
     MOVE = 'Movimentação',
     STATUS_CHANGE = 'Mudança de Status',
     LOGIN = 'Login',
-    ERROR = 'Erro'
+    ERROR = 'Erro',
+    ADJUSTMENT = 'Ajuste de Estoque',
+    REPLENISHMENT_TRIGGER = 'Gatilho Ressuprimento',
+    PICKING_SHORTAGE = 'Ruptura Picking'
 }
 
 export interface AuditLog {
@@ -371,17 +418,16 @@ export interface AuditLog {
     userId: string;
     userName: string;
     actionType: AuditActionType;
-    entity: 'SKU' | 'Pedido' | 'Etiqueta' | 'Endereço' | 'Missão' | 'Recebimento' | 'Conferência' | 'Divergência';
+    entity: 'SKU' | 'Pedido' | 'Etiqueta' | 'Endereço' | 'Missão' | 'Recebimento' | 'Conferência' | 'Divergência' | 'Estoque';
     entityId: string;
     details: string;
-    metadata?: any; // Store "before" and "after" states
+    metadata?: any;
 }
 
-// --- NEW: RULES ENGINE ---
 export interface StorageRule {
     id: string;
     name: string;
     condition: (sku: SKU, endereco: Endereco) => boolean;
-    priority: number; // 1 = Highest
+    priority: number; 
     action: 'ALLOW' | 'DENY' | 'PREFER';
 }
