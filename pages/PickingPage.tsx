@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Missao, MissaoTipo, Pedido, SKU, Endereco, Etiqueta } from '../types';
@@ -357,6 +356,7 @@ const PickingPage: React.FC = () => {
     const currentUserId = 'admin_user';
 
     const [myActiveGroup, setMyActiveGroup] = useState<GroupedTransport | null>(null);
+    const [explicitlyFinishedPedidoId, setExplicitlyFinishedPedidoId] = useState<string | null>(null);
 
     const groupAndSortMissions = (missionList: Missao[]): GroupedTransport[] => {
          const groupedByTransport = missionList.reduce((acc, mission) => {
@@ -411,32 +411,32 @@ const PickingPage: React.FC = () => {
     };
     
     useEffect(() => {
-        // 1. Find ANY mission that is currently active for the user. This tells us which group they are in.
-        const anActiveMission = missoes.find(m =>
-            m.operadorId === currentUserId &&
-            (m.status === 'Atribuída' || m.status === 'Em Andamento')
-        );
-
-        if (anActiveMission?.pedidoId) {
-            // 2. We've found an active group. Now, get ALL missions for that same group (pedidoId),
-            // including those already completed by this operator in this session.
-            // This ensures the view doesn't break as missions are completed.
-            const missionsForActiveGroup = missoes.filter(m =>
-                m.pedidoId === anActiveMission.pedidoId &&
+        const relevantMissions = missoes.filter(m => m.operadorId === currentUserId);
+        
+        // Um grupo está "ativo" se houver pelo menos uma missão que não esteja 'Pendente'.
+        // Ignora grupos que o usuário finalizou explicitamente nesta sessão.
+        const activeMission = relevantMissions.find(m => m.status !== 'Pendente' && m.pedidoId !== explicitlyFinishedPedidoId);
+    
+        if (activeMission && activeMission.pedidoId) {
+            const activePedidoId = activeMission.pedidoId;
+            
+            // Reúne TODAS as missões do grupo ativo para este usuário, incluindo as concluídas.
+            const allMissionsForActiveGroup = missoes.filter(m =>
+                m.pedidoId === activePedidoId &&
                 m.operadorId === currentUserId
             );
-
-            if (missionsForActiveGroup.length > 0) {
-                const grouped = groupAndSortMissions(missionsForActiveGroup);
+    
+            if (allMissionsForActiveGroup.length > 0) {
+                const grouped = groupAndSortMissions(allMissionsForActiveGroup);
                 setMyActiveGroup(grouped[0] || null);
             } else {
-                setMyActiveGroup(null);
+                 setMyActiveGroup(null);
             }
         } else {
-            // No active mission found for this user.
+            // Se não houver missões não-pendentes (ou o grupo foi finalizado), não há grupo ativo.
             setMyActiveGroup(null);
         }
-    }, [missoes, currentUserId, pedidos, skus, enderecos]);
+    }, [missoes, currentUserId, pedidos, skus, enderecos, explicitlyFinishedPedidoId]);
 
 
     const availableGroups = useMemo(() => {
@@ -447,6 +447,7 @@ const PickingPage: React.FC = () => {
     }, [missoes, pedidos, skus, enderecos]);
     
     const handleStartGroup = (pedidoId: string, familia: string) => {
+        setExplicitlyFinishedPedidoId(null);
         assignFamilyMissionsToOperator(pedidoId, familia, currentUserId);
     };
 
@@ -455,12 +456,16 @@ const PickingPage: React.FC = () => {
     };
 
     const handleFinishGroup = () => {
+        if (myActiveGroup) {
+            setExplicitlyFinishedPedidoId(myActiveGroup.pedido.id);
+        }
         setMyActiveGroup(null);
     };
 
     const handleRevertGroup = (missionIds: string[]) => {
         if(window.confirm("Tem certeza que deseja estornar este grupo de missões? Elas voltarão para a fila de pendentes.")) {
             revertMissionGroup(missionIds);
+            setMyActiveGroup(null);
         }
     };
 

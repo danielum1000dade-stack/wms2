@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Etiqueta, Endereco, SKU, EtiquetaStatus, EnderecoTipo, EnderecoStatus } from '../types';
@@ -165,26 +164,34 @@ const ArmazenagemPage: React.FC = () => {
     
         if (enderecosDisponiveis.length === 0) return null;
     
-        const skuSres = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean);
+        const skuSres = [sku.sre1, sku.sre2, sku.sre3, sku.sre4, sku.sre5].filter(Boolean).map(s => s.toUpperCase());
     
+        const sreMatchingEnderecos: Endereco[] = [];
+        const genericEnderecos: Endereco[] = [];
+
+        for (const endereco of enderecosDisponiveis) {
+            const endSres = [endereco.sre1, endereco.sre2, endereco.sre3, endereco.sre4, endereco.sre5].filter(Boolean).map(s => s.toUpperCase());
+            if (endSres.length > 0) {
+                if (skuSres.some(sre => endSres.includes(sre))) {
+                    sreMatchingEnderecos.push(endereco);
+                }
+                // Se o endereço tem SREs mas nenhuma corresponde, ele é ignorado.
+            } else {
+                genericEnderecos.push(endereco);
+            }
+        }
+
+        const candidatePool = sreMatchingEnderecos.length > 0 ? sreMatchingEnderecos : genericEnderecos;
+        const motivoBase = sreMatchingEnderecos.length > 0 ? 'Compatível com as regras de armazenagem (SRE).' : 'Posição genérica disponível.';
+
+        if (candidatePool.length === 0) return null;
+
         let bestMatch: { endereco: Endereco, score: number, motivo: string } | null = null;
     
-        for (const endereco of enderecosDisponiveis) {
+        for (const endereco of candidatePool) {
             let score = 0;
-            let motivo = '';
-    
-            // SRE Matching (high priority)
-            const endSres = [endereco.sre1, endereco.sre2, endereco.sre3, endereco.sre4, endereco.sre5].filter(Boolean);
-            const sreMatch = skuSres.some(sre => endSres.includes(sre));
-            if (sreMatch) {
-                score += 1000;
-                motivo = 'Compatível com as regras de armazenagem (SRE).';
-            } else if (endSres.length > 0) {
-                continue; // Skip if address has SREs but none match
-            }
-    
-            // Affinity Score (proximity to same SKU)
-            // This is a simple simulation. A real implementation would check neighbors.
+            
+            // Affinity Score (proximidade com o mesmo SKU)
             const hasSameSkuNearby = etiquetas.some(et => 
                 et.skuId === sku.id && 
                 et.enderecoId && 
@@ -192,24 +199,20 @@ const ArmazenagemPage: React.FC = () => {
             );
             if (hasSameSkuNearby) {
                 score += 100;
-                motivo += ' Próximo a outros pallets da mesma família.';
             }
             
-            // Proximity to Expedition (ABC proxy)
-            // Lower 'A' numbers are closer
+            // Proximidade da Expedição (proxy por ABC) - Corredores com letras menores estão mais próximos
             const corredorCode = endereco.codigo.charCodeAt(0);
-            score -= corredorCode; // 'A' (65) will have a higher score than 'Z' (90)
+            score -= corredorCode; // 'A' (65) terá score maior que 'Z' (90)
             
-            if (!motivo) {
-                 motivo = 'Posição genérica disponível.';
-            }
-
             if (!bestMatch || score > bestMatch.score) {
-                bestMatch = { endereco, score, motivo: motivo.trim() };
+                let finalMotivo = motivoBase;
+                if(hasSameSkuNearby) finalMotivo += ' Próximo a produtos da mesma família.';
+                bestMatch = { endereco, score, motivo: finalMotivo };
             }
         }
         
-        return bestMatch ? { endereco: bestMatch.endereco, motivo: bestMatch.motivo } : null;
+        return bestMatch ? { endereco: bestMatch.endereco, motivo: bestMatch.motivo.trim() } : null;
     };
 
     const handleSelectEtiqueta = (etiqueta: Etiqueta) => {
