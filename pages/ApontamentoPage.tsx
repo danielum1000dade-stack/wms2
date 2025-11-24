@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Etiqueta, EtiquetaStatus, SKU } from '../types';

@@ -23,8 +23,8 @@ const PedidosPage: React.FC = () => {
     const [reopenModalState, setReopenModalState] = useState<{ isOpen: boolean, pedido: Pedido | null }>({ isOpen: false, pedido: null });
     const [reopenReason, setReopenReason] = useState('');
 
-    const handleImport = (data: any[]) => {
-        const result = processTransportData(data);
+    const handleImport = async (data: any[]) => {
+        const result = await processTransportData(data);
         setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
         setTimeout(() => setFeedback(null), 5000);
     };
@@ -121,7 +121,7 @@ const PedidosPage: React.FC = () => {
                             {pedidos.length > 0 ? pedidos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map(pedido => (
                                 <tr key={pedido.id} className={pedido.priority ? 'bg-yellow-50' : ''}>
                                     <td className="px-3 py-4 whitespace-nowrap text-center">
-                                        <button onClick={() => updatePedido(pedido.id, !pedido.priority)} title="Marcar como prioritário">
+                                        <button onClick={() => updatePedido(pedido.id, { priority: !pedido.priority })} title="Marcar como prioritário">
                                             {pedido.priority ? <StarSolidIcon className="h-6 w-6 text-yellow-500"/> : <StarOutlineIcon className="h-6 w-6 text-gray-400 hover:text-yellow-500"/>}
                                         </button>
                                     </td>

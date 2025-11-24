@@ -1,6 +1,5 @@
 
 
-
 import React, { useState } from 'react';
 // FIX: Imported Outlet from react-router-dom to render nested routes.
 import { NavLink, useLocation, Outlet } from 'react-router-dom';

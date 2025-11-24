@@ -114,7 +114,7 @@ const RouteSummaryModal: React.FC<{
 const ActivePickingView: React.FC<{
     activeGroup: GroupedTransport;
     etiquetas: Etiqueta[];
-    onCompleteMission: (missionId: string, completedQty: number, divergenceReason?: string) => void;
+    onCompleteMission: (missionId: string, completedQty: number, divergenceReason?: string, observation?: string) => void;
     onFinishGroup: () => void;
     onRevertGroup: (missionIds: string[]) => void;
 }> = ({ activeGroup, etiquetas, onCompleteMission, onFinishGroup, onRevertGroup }) => {
@@ -128,6 +128,7 @@ const ActivePickingView: React.FC<{
 
     const [step, setStep] = useState(1); // 1 for address, 2 for quantity
     const [inputValue, setInputValue] = useState('');
+    const [observation, setObservation] = useState('');
     const [error, setError] = useState('');
     const [showDivergenceModal, setShowDivergenceModal] = useState(false);
     const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -146,6 +147,7 @@ const ActivePickingView: React.FC<{
         setStep(1);
         setInputValue('');
         setError('');
+        setObservation('');
     }, [currentMission]);
 
     useEffect(() => {
@@ -173,7 +175,7 @@ const ActivePickingView: React.FC<{
         } else { // Quantity validation
             const qty = parseInt(inputValue, 10);
             if (!isNaN(qty) && qty >= 0 && qty <= currentMission.quantidade) {
-                onCompleteMission(currentMission.id, qty);
+                onCompleteMission(currentMission.id, qty, undefined, observation);
                 // The parent component will force a re-render with a new key, resetting the state.
             } else {
                 setError(`Quantidade inválida. Deve ser entre 0 e ${currentMission.quantidade}.`);
@@ -182,7 +184,7 @@ const ActivePickingView: React.FC<{
     };
     
     const handleConfirmDivergence = (missionId: string, reason: string) => {
-        onCompleteMission(missionId, 0, reason);
+        onCompleteMission(missionId, 0, reason, observation);
         setShowDivergenceModal(false);
     };
 
@@ -281,6 +283,16 @@ const ActivePickingView: React.FC<{
                             className="w-full text-center text-2xl font-mono p-3 border-2 border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500"
                         />
                         {error && <p className="text-red-600 text-center mt-2">{error}</p>}
+                    </div>
+                    <div>
+                        <label htmlFor="observation-input" className="text-center block text-sm font-medium text-gray-700 mb-1">Observações (Opcional)</label>
+                        <input
+                            id="observation-input"
+                            type="text"
+                            value={observation}
+                            onChange={(e) => setObservation(e.target.value)}
+                            className="w-full text-center p-2 border border-gray-300 rounded-md"
+                        />
                     </div>
                     <button onClick={handleValidation} className="w-full bg-green-600 text-white font-bold py-4 rounded-md text-lg hover:bg-green-700">
                         Confirmar
@@ -460,7 +472,7 @@ const PickingPage: React.FC = () => {
     const availableGroups = useMemo(() => {
         const pendingMissions = missoes.filter(m => 
             m.status === 'Pendente' && 
-            (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO)
+            m.tipo === MissaoTipo.PICKING
         );
         
         const myActivePedidoId = myActiveGroup?.pedido.id;
@@ -479,8 +491,8 @@ const PickingPage: React.FC = () => {
         }
     };
 
-    const handleCompleteMission = (missionId: string, completedQty: number, divergenceReason?: string) => {
-        updateMissionStatus(missionId, 'Concluída', currentUserId, completedQty, divergenceReason);
+    const handleCompleteMission = (missionId: string, completedQty: number, divergenceReason?: string, observation?: string) => {
+        updateMissionStatus(missionId, 'Concluída', currentUserId, completedQty, divergenceReason, observation);
     };
     
     const handleFinishGroup = () => {

@@ -36,7 +36,7 @@ const CadastroPage: React.FC = () => {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-3xl font-bold text-gray-900">Cadastros e Importações</h1>
+            <h1 className="text-3xl font-bold text-gray-900">Cadastros e Configurações</h1>
             <div className="bg-white p-4 rounded-lg shadow-md">
                 <div className="flex space-x-2 border-b border-gray-200 mb-4 pb-2 overflow-x-auto">
                     <TabButton tabName="enderecos" label="Endereços" icon={MapIcon} />
@@ -320,12 +320,13 @@ const EnderecoModal: React.FC<{ endereco: Partial<Endereco> | null, industrias: 
 
 // CadastroSKUs Component
 const CadastroSKUs: React.FC = () => {
-    const { skus, addSku, updateSku, deleteSku, addSkusBatch, industrias, tiposBloqueio } = useWMS();
+    const { skus, addSku, updateSku, deleteSku, addSkusBatch, industrias, tiposBloqueio, calculateAndApplyABCClassification } = useWMS();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [currentSku, setCurrentSku] = useState<Partial<SKU> | null>(null);
     const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
     const [skuToBlock, setSkuToBlock] = useState<SKU | null>(null);
+    const [feedback, setFeedback] = useState('');
 
     const openModal = (sku: Partial<SKU> | null = null) => {
         setCurrentSku(sku || {});
@@ -422,6 +423,12 @@ const CadastroSKUs: React.FC = () => {
         XLSX.writeFile(wb, "modelo_cadastro_skus.xlsx");
     };
 
+    const handleRunABC = () => {
+        const result = calculateAndApplyABCClassification();
+        setFeedback(result.message);
+        setTimeout(() => setFeedback(''), 5000);
+    }
+
     // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
     const skuColumnConfig: ColumnConfig = {
         sku: { type: 'string', required: true },
@@ -447,6 +454,9 @@ const CadastroSKUs: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">Gerenciar SKUs</h2>
                 <div className="flex space-x-2">
+                    <button onClick={handleRunABC} className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700">
+                        Calcular Curva ABC
+                    </button>
                     <button onClick={handleDownloadTemplate} className="flex items-center bg-gray-600 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700">
                         <ArrowDownTrayIcon className="h-5 w-5 mr-2" /> Baixar Modelo
                     </button>
@@ -458,6 +468,7 @@ const CadastroSKUs: React.FC = () => {
                     </button>
                 </div>
             </div>
+            {feedback && <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">{feedback}</div>}
             {/* Table */}
              <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -466,21 +477,20 @@ const CadastroSKUs: React.FC = () => {
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Descritivo</th>
                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família</th>
-                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Indústria</th>
+                             <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Curva ABC</th>
                              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                             <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
                         </tr>
                     </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
                         {skus.map(s => {
-                            const industria = industrias.find(i => i.id === s.industriaId);
                             const motivo = tiposBloqueio.find(tb => tb.id === s.motivoBloqueio);
                             return (
                                 <tr key={s.id} className={s.status === SKUStatus.BLOQUEADO ? 'bg-red-50' : ''}>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.sku}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.descritivo}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{s.familia}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap">{industria?.nome || 'N/A'}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-center font-bold">{s.classificacaoABC || '-'}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                             s.status === SKUStatus.ATIVO ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
@@ -1086,28 +1096,30 @@ const ImportarEstoqueInicial: React.FC = () => {
 };
 
 const ConfiguracoesOperacionais: React.FC = () => {
-    const { pickingConfig, setPickingConfig } = useWMS();
+    const { appConfig, setAppConfig } = useWMS();
 
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold">Configurações Operacionais</h2>
             <div className="bg-gray-50 p-4 rounded-lg border">
-                <h3 className="font-medium text-gray-800 mb-2">Separação (Picking)</h3>
-                <div className="flex items-center">
-                    <input
-                        id="allow-any-address"
-                        type="checkbox"
-                        checked={pickingConfig.allowPickingFromAnyAddress}
-                        onChange={(e) => setPickingConfig(prev => ({ ...prev, allowPickingFromAnyAddress: e.target.checked }))}
-                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="allow-any-address" className="ml-2 block text-sm text-gray-900">
-                        Permitir separação de qualquer tipo de endereço
+                <h3 className="font-medium text-gray-800 mb-2">Ressuprimento</h3>
+                <div className="max-w-sm">
+                    <label htmlFor="replenishment-threshold" className="block text-sm text-gray-900">
+                        Nível de estoque mínimo para ressuprimento no picking (%)
                     </label>
+                    <input
+                        id="replenishment-threshold"
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={appConfig.replenishmentThreshold}
+                        onChange={(e) => setAppConfig(prev => ({ ...prev, replenishmentThreshold: parseInt(e.target.value, 10) || 0 }))}
+                        className="mt-1 block w-full rounded-md border-gray-300 shadow-sm py-2 px-3"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                        Quando o estoque de um item em um endereço de picking cair abaixo deste percentual, o sistema irá sugerir uma missão de ressuprimento.
+                    </p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1 ml-6">
-                    Se desmarcado (padrão), o sistema só gerará missões de picking para endereços do tipo 'Picking'. Se o estoque estiver apenas em 'Armazenagem', será necessário criar uma missão de ressuprimento.
-                </p>
             </div>
         </div>
     );

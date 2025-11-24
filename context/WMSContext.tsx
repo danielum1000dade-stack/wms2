@@ -61,12 +61,18 @@ interface PickingConfig {
     allowPickingFromAnyAddress: boolean;
 }
 
+interface AppConfig {
+    replenishmentThreshold: number; // Percentage
+}
+
+
 interface WMSContextType {
     skus: SKU[];
     addSku: (sku: Omit<SKU, 'id'>) => SKU;
     addSkusBatch: (skus: Omit<SKU, 'id'>[]) => void;
     updateSku: (sku: SKU) => void;
     deleteSku: (id: string) => boolean;
+    calculateAndApplyABCClassification: () => { success: boolean, message: string };
     enderecos: Endereco[];
     addEndereco: (endereco: Omit<Endereco, 'id'>) => void;
     addEnderecosBatch: (enderecos: Omit<Endereco, 'id'>[]) => void;
@@ -92,9 +98,9 @@ interface WMSContextType {
     armazenarEtiqueta: (id: string, enderecoId: string) => { success: boolean, message?: string };
     pedidos: Pedido[];
     addPedidos: (pedidos: Pedido[]) => void;
-    updatePedido: (pedidoId: string, priority: boolean) => void;
+    updatePedido: (pedidoId: string, data: Partial<Omit<Pedido, 'id'>>) => void;
     reabrirSeparacao: (pedidoId: string, motivo: string) => { success: boolean, message: string };
-    processTransportData: (transportData: any[]) => { success: boolean; message: string; };
+    processTransportData: (transportData: any[]) => Promise<{ success: boolean; message: string; }>;
     generateMissionsForPedido: (pedidoId: string) => { success: boolean; message: string; };
     missoes: Missao[];
     createPickingMissions: (pedido: Pedido) => void;
@@ -105,7 +111,7 @@ interface WMSContextType {
     assignNextMission: (operadorId: string) => Missao | null;
     assignFamilyMissionsToOperator: (pedidoId: string, familia: string, operadorId: string) => { success: boolean; missions?: Missao[]; message?: string };
     getMyActivePickingGroup: (operadorId: string) => Missao[] | null;
-    updateMissionStatus: (missionId: string, status: Missao['status'], operadorId?: string, completedQuantity?: number, divergenceReason?: string) => void;
+    updateMissionStatus: (missionId: string, status: Missao['status'], operadorId?: string, completedQuantity?: number, divergenceReason?: string, observation?: string) => void;
     palletsConsolidados: PalletConsolidado[];
     addPalletConsolidado: (pallet: Omit<PalletConsolidado, 'id'>) => PalletConsolidado;
     divergencias: Divergencia[];
@@ -144,6 +150,10 @@ interface WMSContextType {
     // Picking Configuration
     pickingConfig: PickingConfig;
     setPickingConfig: React.Dispatch<React.SetStateAction<PickingConfig>>;
+
+    // App Configuration
+    appConfig: AppConfig;
+    setAppConfig: React.Dispatch<React.SetStateAction<AppConfig>>;
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -168,6 +178,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const [pickingConfig, setPickingConfig] = useLocalStorage<PickingConfig>('wms_picking_config', {
         allowPickingFromAnyAddress: false
+    });
+
+    const [appConfig, setAppConfig] = useLocalStorage<AppConfig>('wms_app_config', {
+        replenishmentThreshold: 25, // Default to 25%
     });
 
     // Conferencia State
@@ -198,6 +212,58 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSkus(prevSkus => prevSkus.filter(s => s.id !== id));
         return true;
     };
+
+    const calculateAndApplyABCClassification = (): { success: boolean; message: string } => {
+        const pickingMissions = missoes.filter(m => m.tipo === MissaoTipo.PICKING);
+        if (pickingMissions.length === 0) {
+            return { success: false, message: "Não há histórico de picking suficiente para calcular a curva ABC." };
+        }
+
+        const skuCounts = pickingMissions.reduce((acc, mission) => {
+            acc[mission.skuId] = (acc[mission.skuId] || 0) + 1; // Count by number of picks
+            return acc;
+        }, {} as Record<string, number>);
+
+        const sortedSkus = Object.entries(skuCounts).sort(([, a], [, b]) => b - a);
+        
+        const totalPicks = sortedSkus.reduce((sum, [, count]) => sum + count, 0);
+        const classAThreshold = totalPicks * 0.80;
+        const classBThreshold = totalPicks * 0.95;
+
+        let cumulativePicks = 0;
+        const classifiedSkuIds: Record<string, 'A' | 'B' | 'C'> = {};
+        
+        sortedSkus.forEach(([skuId, count]) => {
+            cumulativePicks += count;
+            if (cumulativePicks <= classAThreshold) {
+                classifiedSkuIds[skuId] = 'A';
+            } else if (cumulativePicks <= classBThreshold) {
+                classifiedSkuIds[skuId] = 'B';
+            } else {
+                classifiedSkuIds[skuId] = 'C';
+            }
+        });
+        
+        let updatedCount = 0;
+        setSkus(prevSkus => {
+            return prevSkus.map(sku => {
+                const newClass = classifiedSkuIds[sku.id];
+                if (newClass && sku.classificacaoABC !== newClass) {
+                    updatedCount++;
+                    return { ...sku, classificacaoABC: newClass };
+                }
+                // If SKU has no picks, classify as C
+                if (!classifiedSkuIds[sku.id] && sku.classificacaoABC !== 'C') {
+                    updatedCount++;
+                    return { ...sku, classificacaoABC: 'C' };
+                }
+                return sku;
+            });
+        });
+
+        return { success: true, message: `Curva ABC calculada. ${updatedCount} SKUs foram atualizados.` };
+    };
+
 
     // Endereco Management
     const addEndereco = (endereco: Omit<Endereco, 'id'>) => setEnderecos(prev => [...prev, { ...endereco, id: generateId(), status: endereco.status || EnderecoStatus.LIVRE }]);
@@ -459,8 +525,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     // Pedido Management
     const addPedidos = (newPedidos: Pedido[]) => setPedidos(prev => [...prev, ...newPedidos]);
-    const updatePedido = (pedidoId: string, priority: boolean) => {
-        setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, priority } : p));
+    const updatePedido = (pedidoId: string, data: Partial<Omit<Pedido, 'id'>>) => {
+        setPedidos(prev => prev.map(p => p.id === pedidoId ? { ...p, ...data } : p));
     };
 
     const reabrirSeparacao = (pedidoId: string, motivo: string) => {
@@ -500,50 +566,56 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
 
-     const processTransportData = (transportData: any[]): { success: boolean; message: string; } => {
-        const groupedByTransporte = transportData.reduce((acc, row) => {
-            const transporteNum = String(row['Nº transporte']);
-            if (!acc[transporteNum]) {
-                acc[transporteNum] = [];
-            }
-            acc[transporteNum].push(row);
-            return acc;
-        }, {} as Record<string, any[]>);
+     const processTransportData = (transportData: any[]): Promise<{ success: boolean; message: string; }> => {
+        return new Promise((resolve) => {
+            setTimeout(() => { // Simulate network delay
+                const groupedByTransporte = transportData.reduce((acc, row) => {
+                    const transporteNum = String(row['Nº transporte']);
+                    if (!acc[transporteNum]) {
+                        acc[transporteNum] = [];
+                    }
+                    acc[transporteNum].push(row);
+                    return acc;
+                }, {} as Record<string, any[]>);
 
-        const newPedidos: Pedido[] = [];
-        for (const numeroTransporte in groupedByTransporte) {
-            if (pedidos.some(p => p.numeroTransporte === numeroTransporte)) {
-                 return { success: false, message: `Transporte ${numeroTransporte} já existe.`};
-            }
-            const items: PedidoItem[] = [];
-            for (const row of groupedByTransporte[numeroTransporte]) {
-                const sku = skus.find(s => String(s.sku) === String(row['Cód.Item']));
-                if (!sku) {
-                    return { success: false, message: `SKU ${row['Cód.Item']} não encontrado no cadastro.` };
+                const newPedidos: Pedido[] = [];
+                for (const numeroTransporte in groupedByTransporte) {
+                    if (pedidos.some(p => p.numeroTransporte === numeroTransporte)) {
+                        resolve({ success: false, message: `Transporte ${numeroTransporte} já existe.`});
+                        return;
+                    }
+                    const items: PedidoItem[] = [];
+                    for (const row of groupedByTransporte[numeroTransporte]) {
+                        const sku = skus.find(s => String(s.sku) === String(row['Cód.Item']));
+                        if (!sku) {
+                            resolve({ success: false, message: `SKU ${row['Cód.Item']} não encontrado no cadastro.` });
+                            return;
+                        }
+                        items.push({
+                            sku: sku.sku,
+                            descricao: row['Descrição do Produto'],
+                            lote: String(row['Lote']),
+                            quantidadeCaixas: row['Unid.Exp.(Caixa)'],
+                            unidadeArmazem: row['Unid.Armaz.'],
+                            totalUnidVda: row['Total(Unid.Vda.)'],
+                            unidExpFracao: row['Unid.Exp.(Fração)'],
+                            pesoBruto: row['Peso Bruto'],
+                            pesoLiquido: row['Peso Líquido'],
+                        });
+                    }
+                    newPedidos.push({
+                        id: `T-${generateId()}`,
+                        numeroTransporte,
+                        items,
+                        status: 'Pendente',
+                        createdAt: new Date().toISOString(),
+                        priority: false,
+                    });
                 }
-                items.push({
-                    sku: sku.sku,
-                    descricao: row['Descrição do Produto'],
-                    lote: String(row['Lote']),
-                    quantidadeCaixas: row['Unid.Exp.(Caixa)'],
-                    unidadeArmazem: row['Unid.Armaz.'],
-                    totalUnidVda: row['Total(Unid.Vda.)'],
-                    unidExpFracao: row['Unid.Exp.(Fração)'],
-                    pesoBruto: row['Peso Bruto'],
-                    pesoLiquido: row['Peso Líquido'],
-                });
-            }
-            newPedidos.push({
-                id: `T-${generateId()}`,
-                numeroTransporte,
-                items,
-                status: 'Pendente',
-                createdAt: new Date().toISOString(),
-                priority: false,
-            });
-        }
-        setPedidos(prev => [...prev, ...newPedidos]);
-        return { success: true, message: `${newPedidos.length} transportes importados com sucesso.` };
+                setPedidos(prev => [...prev, ...newPedidos]);
+                resolve({ success: true, message: `${newPedidos.length} transportes importados com sucesso.` });
+            }, 500); // 500ms delay
+        });
     };
 
     const generateMissionsForPedido = (pedidoId: string): { success: boolean; message: string; } => {
@@ -598,7 +670,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (fullPalletInStorage && fullPalletInStorage.enderecoId) {
                 newMissions.push({
                     id: generateId(),
-                    tipo: MissaoTipo.PICKING, // Direct picking from storage counts as a picking mission
+                    tipo: MissaoTipo.MOVIMENTACAO_PALLET,
                     pedidoId: pedido.id,
                     etiquetaId: fullPalletInStorage.id,
                     skuId: sku.id,
@@ -861,7 +933,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
     };
 
-    const updateMissionStatus = (missionId: string, status: Missao['status'], operadorId?: string, completedQuantity?: number, divergenceReason?: string) => {
+    const updateMissionStatus = (missionId: string, status: Missao['status'], operadorId?: string, completedQuantity?: number, divergenceReason?: string, observation?: string) => {
         setMissoes(prevMissoes => {
             let missionToUpdate = prevMissoes.find(m => m.id === missionId);
             if (!missionToUpdate) return prevMissoes;
@@ -923,7 +995,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
 
             const missionToAssign = pendingMissions[0];
-            assignedMission = { ...missionToAssign, status: 'Atribuída' as const, operadorId: operadorId };
+            // FIX: Explicitly typed the new status to prevent TypeScript from widening it to a string.
+            const newStatus: Missao['status'] = 'Atribuída';
+            assignedMission = { ...missionToAssign, status: newStatus, operadorId: operadorId };
             return prevMissoes.map(m => (m.id === assignedMission!.id ? assignedMission : m));
         });
         return assignedMission;
@@ -951,9 +1025,9 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             
             const now = new Date().toISOString();
-            // FIX: Explicitly type the return value of the map callback to `Missao` to prevent TypeScript
-            // from widening the `status` property to a generic `string`, which resolves the type error.
-            assignedMissions = missionsToAssign.map((m): Missao => ({ ...m, status: 'Atribuída', operadorId, startedAt: now }));
+            // FIX: Explicitly typed the new status to prevent TypeScript from widening it to a string.
+            const newStatus: Missao['status'] = 'Atribuída';
+            assignedMissions = missionsToAssign.map((m) => ({ ...m, status: newStatus, operadorId, startedAt: now }));
 
             return prevMissoes.map(m => {
                 const updated = assignedMissions.find(um => um.id === m.id);
@@ -972,7 +1046,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const activeMissions = missoes.filter(m =>
             m.operadorId === operadorId &&
             (m.status === 'Atribuída' || m.status === 'Em Andamento') &&
-            (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO)
+            (m.tipo === MissaoTipo.PICKING)
         );
         return activeMissions.length > 0 ? activeMissions : null;
     };
@@ -1287,7 +1361,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
 
     const value = {
-        skus, addSku, addSkusBatch, updateSku, deleteSku,
+        skus, addSku, addSkusBatch, updateSku, deleteSku, calculateAndApplyABCClassification,
         enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco,
         industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
         recebimentos, addRecebimento, updateRecebimento,
@@ -1301,7 +1375,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         tiposBloqueio, addTipoBloqueio, updateTipoBloqueio, deleteTipoBloqueio,
         inventoryCountSessions, inventoryCountItems, startInventoryCount, recordCountItem, undoLastCount, finishInventoryCount, getCountItemsBySession,
         conferencias, conferenciaItems, conferenciaErros, startConferencia, getActiveConferencia, finishConferencia,
-        pickingConfig, setPickingConfig
+        pickingConfig, setPickingConfig,
+        appConfig, setAppConfig
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;
