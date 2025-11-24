@@ -583,49 +583,77 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 return dateA - dateB; 
             });
 
-            if (allAvailableEtiquetas.length === 0) {
+            if (allAvailableEtiquetas.filter(e => !missionEtiquetas.has(e.id)).length === 0) {
                 errors.push(`Sem estoque disponível para o SKU ${item.sku}, Lote ${item.lote}.`);
                 continue;
             }
             
-            if (pickingConfig.allowPickingFromAnyAddress) {
-                // Logic for flexible picking (from any address type)
-                for (const etiqueta of allAvailableEtiquetas) {
-                     if (quantidadePendente <= 0) break;
-                     if (!etiqueta.enderecoId) continue; 
-                     const enderecoOrigem = enderecos.find(end => end.id === etiqueta.enderecoId);
-                     if (!enderecoOrigem || enderecoOrigem.status === EnderecoStatus.BLOQUEADO) continue;
+            // Prioritize full pallet pick from ARMAZENAGEM
+            const fullPalletInStorage = allAvailableEtiquetas.find(e =>
+                e.quantidadeCaixas === quantidadePendente &&
+                enderecos.find(end => end.id === e.enderecoId)?.tipo === EnderecoTipo.ARMAZENAGEM &&
+                !missionEtiquetas.has(e.id)
+            );
+    
+            if (fullPalletInStorage && fullPalletInStorage.enderecoId) {
+                newMissions.push({
+                    id: generateId(),
+                    tipo: MissaoTipo.PICKING, // Direct picking from storage counts as a picking mission
+                    pedidoId: pedido.id,
+                    etiquetaId: fullPalletInStorage.id,
+                    skuId: sku.id,
+                    quantidade: quantidadePendente,
+                    origemId: fullPalletInStorage.enderecoId,
+                    destinoId: antechamber.id,
+                    status: 'Pendente',
+                    createdAt: new Date().toISOString(),
+                });
+                missionEtiquetas.add(fullPalletInStorage.id);
+                quantidadePendente = 0;
+            }
+            
+            // Continue with existing logic if item is not fully satisfied
+            if (quantidadePendente > 0) {
+                if (pickingConfig.allowPickingFromAnyAddress) {
+                    // Logic for flexible picking (from any address type)
+                    for (const etiqueta of allAvailableEtiquetas.filter(e => !missionEtiquetas.has(e.id))) {
+                         if (quantidadePendente <= 0) break;
+                         if (!etiqueta.enderecoId) continue; 
+                         const enderecoOrigem = enderecos.find(end => end.id === etiqueta.enderecoId);
+                         if (!enderecoOrigem || enderecoOrigem.status === EnderecoStatus.BLOQUEADO) continue;
 
-                     const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
-                     const quantidadeRetirar = Math.min(quantidadePendente, quantidadeNoPallet);
-                     
-                     if (quantidadeRetirar > 0) {
-                         const missionType = (enderecoOrigem.tipo === EnderecoTipo.ARMAZENAGEM)
-                             ? MissaoTipo.REABASTECIMENTO
-                             : MissaoTipo.PICKING;
-
-                         newMissions.push({
-                             id: generateId(),
-                             tipo: missionType,
-                             pedidoId: pedido.id,
-                             etiquetaId: etiqueta.id,
-                             skuId: sku.id,
-                             quantidade: quantidadeRetirar,
-                             origemId: etiqueta.enderecoId,
-                             destinoId: antechamber.id,
-                             status: 'Pendente',
-                             createdAt: new Date().toISOString(),
-                         });
+                         const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
+                         const quantidadeRetirar = Math.min(quantidadePendente, quantidadeNoPallet);
                          
-                         missionEtiquetas.add(etiqueta.id);
-                         quantidadePendente -= quantidadeRetirar;
-                     }
-                }
-            } else {
-                // Strict logic: only from PICKING, or create REABASTECIMENTO
-                const etiquetasDePicking = allAvailableEtiquetas.filter(e => enderecos.find(end => end.id === e.enderecoId)?.tipo === EnderecoTipo.PICKING);
+                         if (quantidadeRetirar > 0) {
+                             const missionType = (enderecoOrigem.tipo === EnderecoTipo.ARMAZENAGEM)
+                                 ? MissaoTipo.REABASTECIMENTO
+                                 : MissaoTipo.PICKING;
 
-                if (etiquetasDePicking.length > 0) {
+                             newMissions.push({
+                                 id: generateId(),
+                                 tipo: missionType,
+                                 pedidoId: pedido.id,
+                                 etiquetaId: etiqueta.id,
+                                 skuId: sku.id,
+                                 quantidade: quantidadeRetirar,
+                                 origemId: etiqueta.enderecoId,
+                                 destinoId: antechamber.id,
+                                 status: 'Pendente',
+                                 createdAt: new Date().toISOString(),
+                             });
+                             
+                             missionEtiquetas.add(etiqueta.id);
+                             quantidadePendente -= quantidadeRetirar;
+                         }
+                    }
+                } else {
+                    // Strict logic: only from PICKING, or create REABASTECIMENTO
+                    const etiquetasDePicking = allAvailableEtiquetas.filter(e => 
+                        enderecos.find(end => end.id === e.enderecoId)?.tipo === EnderecoTipo.PICKING &&
+                        !missionEtiquetas.has(e.id)
+                    );
+    
                     for (const etiqueta of etiquetasDePicking) {
                         if (quantidadePendente <= 0) break;
                         const quantidadeNoPallet = etiqueta.quantidadeCaixas || 0;
@@ -648,36 +676,38 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                             quantidadePendente -= quantidadeRetirar;
                         }
                     }
-                } else {
-                    // No stock in picking, check if there is stock in storage
-                    const etiquetasDeArmazenagem = allAvailableEtiquetas.filter(e => enderecos.find(end => end.id === e.enderecoId)?.tipo === EnderecoTipo.ARMAZENAGEM);
+                    
+                    if (quantidadePendente > 0) {
+                        const etiquetasDeArmazenagem = allAvailableEtiquetas.filter(e => 
+                            enderecos.find(end => end.id === e.enderecoId)?.tipo === EnderecoTipo.ARMAZENAGEM &&
+                            !missionEtiquetas.has(e.id)
+                        );
+    
+                        if (etiquetasDeArmazenagem.length > 0) {
+                            needsReplenishment = true;
+                            const etiquetaParaMover = etiquetasDeArmazenagem[0]; // Get the best pallet based on FEFO
+                            const destinoVazio = enderecos.find(e => e.tipo === EnderecoTipo.PICKING && e.status === EnderecoStatus.LIVRE);
 
-                    if (etiquetasDeArmazenagem.length > 0) {
-                        needsReplenishment = true;
-                        const etiquetaParaMover = etiquetasDeArmazenagem[0]; // Get the best pallet based on FEFO
-                        const destinoVazio = enderecos.find(e => e.tipo === EnderecoTipo.PICKING && e.status === EnderecoStatus.LIVRE);
-
-                        if (destinoVazio && etiquetaParaMover.enderecoId) {
-                            const newMission = {
-                                id: generateId(),
-                                tipo: MissaoTipo.REABASTECIMENTO,
-                                pedidoId: pedido.id,
-                                etiquetaId: etiquetaParaMover.id,
-                                skuId: sku.id,
-                                quantidade: etiquetaParaMover.quantidadeCaixas || 0, // Move the whole pallet
-                                origemId: etiquetaParaMover.enderecoId,
-                                destinoId: destinoVazio.id,
-                                status: 'Pendente',
-                                createdAt: new Date().toISOString(),
-                            };
-                            newMissions.push(newMission);
-                            missionEtiquetas.add(etiquetaParaMover.id);
-                            errors.push(`[AVISO] Estoque para SKU ${sku.sku} não encontrado no Picking. Missão de Ressuprimento ${newMission.id} criada para o endereço ${destinoVazio.nome}.`);
-                        } else {
-                            errors.push(`[ERRO] Necessário ressuprimento para SKU ${sku.sku}, mas não há posições de picking livres.`);
+                            if (destinoVazio && etiquetaParaMover.enderecoId) {
+                                const newMission = {
+                                    id: generateId(),
+                                    tipo: MissaoTipo.REABASTECIMENTO,
+                                    pedidoId: pedido.id,
+                                    etiquetaId: etiquetaParaMover.id,
+                                    skuId: sku.id,
+                                    quantidade: etiquetaParaMover.quantidadeCaixas || 0, // Move the whole pallet
+                                    origemId: etiquetaParaMover.enderecoId,
+                                    destinoId: destinoVazio.id,
+                                    status: 'Pendente',
+                                    createdAt: new Date().toISOString(),
+                                };
+                                newMissions.push(newMission);
+                                missionEtiquetas.add(etiquetaParaMover.id);
+                                errors.push(`[AVISO] Estoque para SKU ${sku.sku} requer Ressuprimento. Missão ${newMission.id} criada para o endereço ${destinoVazio.nome}.`);
+                            } else {
+                                errors.push(`[ERRO] Necessário ressuprimento para SKU ${sku.sku}, mas não há posições de picking livres.`);
+                            }
                         }
-                    } else {
-                        // This case is already handled by the allAvailableEtiquetas.length === 0 check
                     }
                 }
             }
@@ -921,7 +951,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             }
             
             const now = new Date().toISOString();
-            // FIX: Explicitly type the return value of the map callback to ensure correct type inference for `status`.
+            // FIX: Explicitly type the return value of the map callback to `Missao` to prevent TypeScript
+            // from widening the `status` property to a generic `string`, which resolves the type error.
             assignedMissions = missionsToAssign.map((m): Missao => ({ ...m, status: 'Atribuída', operadorId, startedAt: now }));
 
             return prevMissoes.map(m => {

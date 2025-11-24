@@ -241,9 +241,9 @@ const ActivePickingView: React.FC<{
                     </button>
                     <button
                         onClick={() => onRevertGroup(allMissions.map(m => m.id))}
-                        className="flex items-center text-sm bg-yellow-500 text-white px-3 py-2 rounded-md hover:bg-yellow-600 shadow-sm"
+                        className="flex items-center text-sm bg-gray-500 text-white px-3 py-2 rounded-md hover:bg-gray-600 shadow-sm"
                     >
-                        <ArrowUturnLeftIcon className="h-4 w-4 mr-1"/> Estornar Missão
+                        <ArrowUturnLeftIcon className="h-4 w-4 mr-1"/> Voltar para Lista
                     </button>
                  </div>
             </div>
