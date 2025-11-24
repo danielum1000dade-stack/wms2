@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 // FIX: Imported Outlet from react-router-dom to render nested routes.
 import { NavLink, useLocation, Outlet } from 'react-router-dom';
-import { ArrowLeftOnRectangleIcon, Bars3Icon, BuildingStorefrontIcon, CubeIcon, InboxStackIcon, MapIcon, PowerIcon, QrCodeIcon, ClipboardDocumentListIcon, DocumentChartBarIcon, TruckIcon, CheckBadgeIcon, Cog6ToothIcon, XMarkIcon, ChevronDownIcon, CubeTransparentIcon, DevicePhoneMobileIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftOnRectangleIcon, Bars3Icon, BuildingStorefrontIcon, CubeIcon, InboxStackIcon, MapIcon, PowerIcon, QrCodeIcon, ClipboardDocumentListIcon, DocumentChartBarIcon, TruckIcon, CheckBadgeIcon, Cog6ToothIcon, XMarkIcon, ChevronDownIcon, CubeTransparentIcon, DevicePhoneMobileIcon, ArrowUpTrayIcon, WrenchScrewdriverIcon } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
     onLogout: () => void;
@@ -25,6 +25,8 @@ const Layout: React.FC<LayoutProps> = ({ onLogout }) => {
         { path: '/conferencia', icon: CheckBadgeIcon, label: 'Conferência' },
         { path: '/expedicao', icon: TruckIcon, label: 'Expedição' },
         { path: '/missoes', icon: DocumentChartBarIcon, label: 'Missões' },
+        { path: '/importacao', icon: ArrowUpTrayIcon, label: 'Importação de Arquivos' },
+        { path: '/config-importacao', icon: WrenchScrewdriverIcon, label: 'Config. Importação' },
         { path: '/cadastros', icon: Cog6ToothIcon, label: 'Cadastros' },
         { path: '/relatorios', icon: DocumentChartBarIcon, label: 'Relatórios' },
     ];

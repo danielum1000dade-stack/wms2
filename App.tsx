@@ -15,7 +15,9 @@ import RelatoriosPage from './pages/RelatoriosPage';
 import LoginPage from './pages/LoginPage';
 import ApontamentoPage from './pages/ApontamentoPage';
 import EstoquePage from './pages/EstoquePage';
-import OperadorPage from './pages/OperadorPage'; // Import new page
+import OperadorPage from './pages/OperadorPage';
+import ConfigImportacaoPage from './pages/ConfigImportacaoPage'; // New Import
+import ImportacaoPage from './pages/ImportacaoPage'; // New Import
 import { WMSProvider } from './context/WMSContext';
 
 const App: React.FC = () => {
@@ -51,6 +53,8 @@ const App: React.FC = () => {
                             <Route path="/missoes" element={<MissoesPage />} />
                             <Route path="/cadastros" element={<CadastroPage />} />
                             <Route path="/relatorios" element={<RelatoriosPage />} />
+                            <Route path="/config-importacao" element={<ConfigImportacaoPage />} />
+                            <Route path="/importacao" element={<ImportacaoPage />} />
                         </Route>
                     )}
                      <Route path="*" element={<Navigate to={isAuthenticated ? "/dashboard" : "/login"} replace />} />

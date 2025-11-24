@@ -11,8 +11,12 @@ import {
     DivergenciaFonte,
     DivergenciaTipo,
     AuditLog, AuditActionType,
-    CategoriaProduto, SetorArmazem
+    CategoriaProduto, SetorArmazem,
+    ImportTemplate, ImportLog, ImportMapping, WMSFieldEnum, ImportTransformation,
+    IndustriaRegras
 } from '../types';
+
+declare const XLSX: any;
 
 const ADMIN_PROFILE_ID = 'admin_profile';
 const OPERADOR_PROFILE_ID = 'operador_profile';
@@ -78,6 +82,13 @@ interface ValidationResult {
     message?: string;
 }
 
+interface ImportResult {
+    success: boolean;
+    logId: string;
+    total: number;
+    errors: string[];
+}
+
 interface WMSContextType {
     skus: SKU[];
     addSku: (sku: Omit<SKU, 'id'>) => SKU;
@@ -133,6 +144,7 @@ interface WMSContextType {
     deleteDivergencia: (id: string) => Promise<void>;
     users: User[];
     addUser: (user: Omit<User, 'id'>) => { success: boolean, message?: string };
+    registerUser: (user: { username: string, fullName: string, password?: string }) => { success: boolean, message?: string };
     updateUser: (user: User) => { success: boolean, message?: string };
     deleteUser: (id: string) => { success: boolean, message?: string };
     profiles: Profile[];
@@ -168,6 +180,13 @@ interface WMSContextType {
     checkReplenishmentNeeds: (skuId: string) => void;
     validateMovement: (etiqueta: Etiqueta, targetAddress: Endereco) => ValidationResult;
     reportPickingShortage: (missionId: string, userId: string) => void;
+
+    // Import Module
+    importTemplates: ImportTemplate[];
+    saveImportTemplate: (template: ImportTemplate) => void;
+    deleteImportTemplate: (id: string) => void;
+    importLogs: ImportLog[];
+    processImportFile: (fileData: any[], template: ImportTemplate, fileName: string, simulate?: boolean) => Promise<ImportResult>;
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -190,6 +209,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [inventoryCountSessions, setInventoryCountSessions] = useLocalStorage<InventoryCountSession[]>('wms_inventory_sessions', []);
     const [inventoryCountItems, setInventoryCountItems] = useLocalStorage<InventoryCountItem[]>('wms_inventory_items', []);
     const [auditLogs, setAuditLogs] = useLocalStorage<AuditLog[]>('wms_audit_logs', []);
+
+    // Import Module State
+    const [importTemplates, setImportTemplates] = useLocalStorage<ImportTemplate[]>('wms_import_templates', []);
+    const [importLogs, setImportLogs] = useLocalStorage<ImportLog[]>('wms_import_logs', []);
 
     const [pickingConfig, setPickingConfig] = useLocalStorage<PickingConfig>('wms_picking_config', {
         allowPickingFromAnyAddress: false
@@ -227,6 +250,191 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setAuditLogs(prev => [newLog, ...prev]);
     };
 
+    // --- IMPORT ENGINE ---
+    const saveImportTemplate = (template: ImportTemplate) => {
+        if (!template.id) template.id = generateId();
+        setImportTemplates(prev => {
+            const exists = prev.find(t => t.id === template.id);
+            if (exists) return prev.map(t => t.id === template.id ? template : t);
+            return [...prev, template];
+        });
+    };
+
+    const deleteImportTemplate = (id: string) => {
+        setImportTemplates(prev => prev.filter(t => t.id !== id));
+    };
+
+    const processImportFile = async (fileData: any[], template: ImportTemplate, fileName: string, simulate = false): Promise<ImportResult> => {
+        const errors: string[] = [];
+        const processedRecords: any[] = [];
+        const industria = industrias.find(i => i.id === template.industriaId);
+
+        // Helper: Transform Value
+        const transformValue = (val: any, type: ImportTransformation): any => {
+            if (val === undefined || val === null) return val;
+            const strVal = String(val).trim();
+            switch (type) {
+                case ImportTransformation.UPPERCASE: return strVal.toUpperCase();
+                case ImportTransformation.LOWERCASE: return strVal.toLowerCase();
+                case ImportTransformation.TRIM: return strVal;
+                case ImportTransformation.NUMBER_INT: return parseInt(strVal.replace(/[^0-9-]/g, ''), 10);
+                case ImportTransformation.NUMBER_FLOAT: return parseFloat(strVal.replace(',', '.')); // Basic replace
+                case ImportTransformation.DATE_ISO: return strVal; // Assume already ISO or handled by Excel parser
+                case ImportTransformation.REMOVE_SPECIAL: return strVal.replace(/[^a-zA-Z0-9 ]/g, "");
+                default: return val;
+            }
+        };
+
+        fileData.forEach((row, index) => {
+            const rowErrorPrefix = `Linha ${index + 2}:`; // +2 accounting for header and 0-index
+            const record: any = {};
+            let rowValid = true;
+
+            // Map columns
+            template.mappings.forEach(map => {
+                let rawValue = row[map.fileColumn];
+                
+                // Check required
+                if (map.required && (rawValue === undefined || rawValue === null || rawValue === '')) {
+                    if (map.defaultValue) {
+                        rawValue = map.defaultValue;
+                    } else {
+                        errors.push(`${rowErrorPrefix} Coluna obrigatória '${map.fileColumn}' vazia.`);
+                        rowValid = false;
+                    }
+                }
+
+                if (rowValid) {
+                    try {
+                        record[map.wmsField] = transformValue(rawValue, map.transformation);
+                    } catch (e) {
+                        errors.push(`${rowErrorPrefix} Erro ao transformar coluna '${map.fileColumn}'.`);
+                        rowValid = false;
+                    }
+                }
+            });
+
+            // Business Logic Validation
+            if (rowValid) {
+                // Validate SKU exists
+                if (record[WMSFieldEnum.SKU_CODIGO]) {
+                    const sku = skus.find(s => s.sku === record[WMSFieldEnum.SKU_CODIGO]);
+                    if (!sku) {
+                        errors.push(`${rowErrorPrefix} SKU '${record[WMSFieldEnum.SKU_CODIGO]}' não encontrado no cadastro.`);
+                        rowValid = false;
+                    } else {
+                        // Check Industry Match if configured
+                        if (sku.industriaId && sku.industriaId !== template.industriaId) {
+                             errors.push(`${rowErrorPrefix} SKU pertence a outra indústria.`);
+                             rowValid = false;
+                        }
+                    }
+                }
+
+                // Validate Quantity
+                if (record[WMSFieldEnum.QUANTIDADE] && (isNaN(record[WMSFieldEnum.QUANTIDADE]) || record[WMSFieldEnum.QUANTIDADE] <= 0)) {
+                    errors.push(`${rowErrorPrefix} Quantidade inválida.`);
+                    rowValid = false;
+                }
+
+                // Industry Rules (Safe Access)
+                const regras = industria?.regras || { exigir_lote: false, exigir_validade: false };
+
+                if (regras.exigir_lote && !record[WMSFieldEnum.LOTE]) {
+                    errors.push(`${rowErrorPrefix} Lote é obrigatório para esta indústria.`);
+                    rowValid = false;
+                }
+                
+                if (regras.exigir_validade && !record[WMSFieldEnum.VALIDADE]) {
+                    errors.push(`${rowErrorPrefix} Validade é obrigatória para esta indústria.`);
+                    rowValid = false;
+                }
+            }
+
+            if (rowValid) {
+                processedRecords.push(record);
+            }
+        });
+
+        if (simulate) {
+            return { success: errors.length === 0, logId: 'SIMULACAO', total: processedRecords.length, errors };
+        }
+
+        // PERSISTENCE LOGIC
+        if (errors.length === 0) {
+            const logId = generateId();
+            
+            if (template.type === 'PEDIDO') {
+                // Group by Order Number
+                const ordersMap: Record<string, Pedido> = {};
+                
+                processedRecords.forEach(rec => {
+                    const orderNum = rec[WMSFieldEnum.PEDIDO_NUMERO];
+                    if (!ordersMap[orderNum]) {
+                        ordersMap[orderNum] = {
+                            id: generateId(),
+                            numeroTransporte: orderNum,
+                            items: [],
+                            status: 'Pendente',
+                            createdAt: new Date().toISOString(),
+                            priority: false,
+                            cliente: rec[WMSFieldEnum.PEDIDO_CLIENTE],
+                            origemImportacao: logId
+                        };
+                    }
+                    
+                    const sku = skus.find(s => s.sku === rec[WMSFieldEnum.SKU_CODIGO]);
+                    ordersMap[orderNum].items.push({
+                        sku: rec[WMSFieldEnum.SKU_CODIGO],
+                        descricao: sku?.descritivo || 'Importado',
+                        lote: rec[WMSFieldEnum.LOTE] || '',
+                        quantidadeCaixas: Number(rec[WMSFieldEnum.QUANTIDADE])
+                    });
+                });
+
+                const newPedidos = Object.values(ordersMap);
+                setPedidos(prev => [...prev, ...newPedidos]);
+                logEvent(AuditActionType.IMPORT, 'Pedido', 'BATCH', `Importação de ${newPedidos.length} pedidos via template ${template.name}`);
+            }
+            // TODO: Implement RECEBIMENTO logic if needed
+
+            const log: ImportLog = {
+                id: logId,
+                timestamp: new Date().toISOString(),
+                templateId: template.id,
+                industriaId: template.industriaId,
+                fileName,
+                status: 'SUCESSO',
+                totalRecords: fileData.length,
+                successCount: processedRecords.length,
+                errorCount: 0,
+                errorsJson: '[]',
+                userId: currentUserId
+            };
+            setImportLogs(prev => [log, ...prev]);
+            
+            return { success: true, logId, total: processedRecords.length, errors: [] };
+        } else {
+             // Log Failure
+             const log: ImportLog = {
+                id: generateId(),
+                timestamp: new Date().toISOString(),
+                templateId: template.id,
+                industriaId: template.industriaId,
+                fileName,
+                status: 'FALHA',
+                totalRecords: fileData.length,
+                successCount: 0,
+                errorCount: errors.length,
+                errorsJson: JSON.stringify(errors.slice(0, 50)), // Limit size
+                userId: currentUserId
+            };
+            setImportLogs(prev => [log, ...prev]);
+            return { success: false, logId: log.id, total: 0, errors };
+        }
+    };
+
+    // ... (Rest of the existing Context Logic)
     // --- CORE VALIDATION ENGINE ---
     const validateMovement = (etiqueta: Etiqueta, targetAddress: Endereco): ValidationResult => {
         // 1. Check Address Status
@@ -368,8 +576,6 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: true, message: "Baixa realizada com sucesso." };
     };
 
-    // ... Existing Methods (Keeping logic but improving where necessary) ...
-
     const addSku = (sku: Omit<SKU, 'id'>): SKU => {
         const newSku = { 
             ...sku, 
@@ -463,12 +669,35 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // ... Industry ...
     const addIndustria = (industria: Omit<Industria, 'id'>) => {
-        const newInd = { ...industria, id: generateId() };
+        const defaultRegras: IndustriaRegras = {
+            exigir_lote: false,
+            exigir_validade: false,
+            permitir_estoque_negativo: false,
+            validacao_shelf_life: false,
+            agrupar_pedidos: false
+        };
+        
+        const newInd = { 
+            ...industria, 
+            id: generateId(),
+            regras: industria.regras || defaultRegras
+        };
         setIndustrias(prev => [...prev, newInd]);
         return newInd;
     }
     const addIndustriasBatch = (newIndustrias: Omit<Industria, 'id'>[]) => {
-        const newInds = newIndustrias.map(i => ({ ...i, id: generateId() }));
+        const defaultRegras: IndustriaRegras = {
+            exigir_lote: false,
+            exigir_validade: false,
+            permitir_estoque_negativo: false,
+            validacao_shelf_life: false,
+            agrupar_pedidos: false
+        };
+        const newInds = newIndustrias.map(i => ({ 
+            ...i, 
+            id: generateId(),
+            regras: i.regras || defaultRegras 
+        }));
         setIndustrias(prev => [...prev, ...newInds]);
     }
     const updateIndustria = (ind: Industria) => setIndustrias(prev => prev.map(i => i.id === ind.id ? ind : i));
@@ -749,6 +978,21 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const deleteDivergencia = async (id: string) => setDivergencias(prev => prev.filter(d => d.id !== id));
     
     const addUser = (u: any) => { setUsers(prev => [...prev, {...u, id: generateId()}]); return {success: true} };
+    const registerUser = (u: { username: string, fullName: string }) => {
+        if (users.some(user => user.username === u.username)) {
+            return { success: false, message: 'Nome de usuário já existe.' };
+        }
+        const newUser: User = {
+            id: generateId(),
+            username: u.username,
+            fullName: u.fullName,
+            profileId: OPERADOR_PROFILE_ID, // Default profile
+            status: UserStatus.ATIVO
+        };
+        setUsers(prev => [...prev, newUser]);
+        logEvent(AuditActionType.CREATE, 'User', newUser.id, `Usuário ${newUser.username} registrado publicamente.`);
+        return { success: true, message: 'Cadastro realizado com sucesso.' };
+    };
     const updateUser = (u: any) => { setUsers(prev => prev.map(user => user.id === u.id ? u : user)); return {success: true} };
     const deleteUser = (id: string) => { setUsers(prev => prev.filter(u => u.id !== id)); return {success: true} };
     
@@ -798,7 +1042,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         missoes, createPickingMissions, createMission, deleteMission, revertMission, revertMissionGroup, assignNextMission, updateMissionStatus, assignFamilyMissionsToOperator, getMyActivePickingGroup,
         palletsConsolidados, addPalletConsolidado,
         divergencias, getDivergenciasByRecebimento, addDivergencia, deleteDivergencia,
-        users, addUser, updateUser, deleteUser,
+        users, addUser, registerUser, updateUser, deleteUser,
         profiles, addProfile, updateProfile, deleteProfile,
         tiposBloqueio, addTipoBloqueio, updateTipoBloqueio, deleteTipoBloqueio,
         inventoryCountSessions, inventoryCountItems, startInventoryCount, recordCountItem, undoLastCount, finishInventoryCount, getCountItemsBySession,
@@ -806,7 +1050,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         auditLogs, logEvent,
         pickingConfig, setPickingConfig,
         appConfig, setAppConfig,
-        performFullPalletWriteOff, checkReplenishmentNeeds, validateMovement, reportPickingShortage
+        performFullPalletWriteOff, checkReplenishmentNeeds, validateMovement, reportPickingShortage,
+        importTemplates, saveImportTemplate, deleteImportTemplate, importLogs, processImportFile
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;

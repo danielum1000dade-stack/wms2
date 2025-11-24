@@ -621,11 +621,29 @@ const CadastroIndustrias: React.FC = () => {
 const IndustriaModal: React.FC<{ industria: Partial<Industria> | null, onSave: (data: any) => void, onClose: () => void }> = ({ industria, onSave, onClose }) => {
     const [formData, setFormData] = useState({
         nome: industria?.nome || '',
+        regras: industria?.regras || {
+            exigir_lote: false,
+            exigir_validade: false,
+            permitir_estoque_negativo: false,
+            validacao_shelf_life: false,
+            agrupar_pedidos: false
+        }
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+    }
+
+    const handleRegraChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, checked } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            regras: {
+                ...prev.regras,
+                [name]: checked
+            }
+        }));
     }
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -635,13 +653,36 @@ const IndustriaModal: React.FC<{ industria: Partial<Industria> | null, onSave: (
 
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                 <h3 className="text-lg font-medium leading-6 text-gray-900 mb-4">{industria?.id ? 'Editar' : 'Nova'} Indústria</h3>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label htmlFor="nome" className="block text-sm font-medium text-gray-700">Nome da Indústria</label>
                         <input type="text" name="nome" id="nome" value={formData.nome} onChange={handleChange} required className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"/>
                     </div>
+
+                    <div className="border-t pt-4">
+                        <h4 className="text-sm font-medium text-gray-800 mb-2">Regras de Negócio</h4>
+                        <div className="space-y-2">
+                            <div className="flex items-center">
+                                <input id="exigir_lote" name="exigir_lote" type="checkbox" checked={formData.regras.exigir_lote} onChange={handleRegraChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/>
+                                <label htmlFor="exigir_lote" className="ml-2 block text-sm text-gray-700">Exigir Lote no Recebimento</label>
+                            </div>
+                            <div className="flex items-center">
+                                <input id="exigir_validade" name="exigir_validade" type="checkbox" checked={formData.regras.exigir_validade} onChange={handleRegraChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/>
+                                <label htmlFor="exigir_validade" className="ml-2 block text-sm text-gray-700">Exigir Validade no Recebimento</label>
+                            </div>
+                            <div className="flex items-center">
+                                <input id="permitir_estoque_negativo" name="permitir_estoque_negativo" type="checkbox" checked={formData.regras.permitir_estoque_negativo} onChange={handleRegraChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/>
+                                <label htmlFor="permitir_estoque_negativo" className="ml-2 block text-sm text-gray-700">Permitir Estoque Negativo (não recomendado)</label>
+                            </div>
+                             <div className="flex items-center">
+                                <input id="validacao_shelf_life" name="validacao_shelf_life" type="checkbox" checked={formData.regras.validacao_shelf_life} onChange={handleRegraChange} className="h-4 w-4 text-indigo-600 border-gray-300 rounded"/>
+                                <label htmlFor="validacao_shelf_life" className="ml-2 block text-sm text-gray-700">Validar Shelf-Life Mínimo</label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="flex justify-end space-x-2 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
                         <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Salvar</button>

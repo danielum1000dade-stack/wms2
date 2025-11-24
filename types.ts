@@ -61,10 +61,19 @@ export interface SKU {
   temperaturaMax?: number;
 }
 
+export interface IndustriaRegras {
+    exigir_lote: boolean;
+    exigir_validade: boolean;
+    permitir_estoque_negativo: boolean;
+    validacao_shelf_life: boolean;
+    agrupar_pedidos: boolean;
+}
+
 export interface Industria {
   id: string;
   nome: string;
   cnpj?: string;
+  regras: IndustriaRegras; // JSON de regras
 }
 
 export enum EnderecoTipo {
@@ -184,6 +193,7 @@ export interface Pedido {
     cliente?: string;
     docaSaida?: string;
     ondaId?: string;
+    origemImportacao?: string; // ID do ImportLog
 }
 
 export enum MissaoTipo {
@@ -409,7 +419,8 @@ export enum AuditActionType {
     ERROR = 'Erro',
     ADJUSTMENT = 'Ajuste de Estoque',
     REPLENISHMENT_TRIGGER = 'Gatilho Ressuprimento',
-    PICKING_SHORTAGE = 'Ruptura Picking'
+    PICKING_SHORTAGE = 'Ruptura Picking',
+    IMPORT = 'Importação'
 }
 
 export interface AuditLog {
@@ -418,7 +429,7 @@ export interface AuditLog {
     userId: string;
     userName: string;
     actionType: AuditActionType;
-    entity: 'SKU' | 'Pedido' | 'Etiqueta' | 'Endereço' | 'Missão' | 'Recebimento' | 'Conferência' | 'Divergência' | 'Estoque';
+    entity: 'SKU' | 'Pedido' | 'Etiqueta' | 'Endereço' | 'Missão' | 'Recebimento' | 'Conferência' | 'Divergência' | 'Estoque' | 'Importação' | 'User';
     entityId: string;
     details: string;
     metadata?: any;
@@ -430,4 +441,78 @@ export interface StorageRule {
     condition: (sku: SKU, endereco: Endereco) => boolean;
     priority: number; 
     action: 'ALLOW' | 'DENY' | 'PREFER';
+}
+
+// --- IMPORTAÇÃO DINÂMICA ---
+
+export enum ImportTransformation {
+    NONE = 'Nenhuma',
+    UPPERCASE = 'Maiúsculas',
+    LOWERCASE = 'Minúsculas',
+    TRIM = 'Remover Espaços (Trim)',
+    NUMBER_INT = 'Número Inteiro',
+    NUMBER_FLOAT = 'Número Decimal',
+    DATE_ISO = 'Data ISO (YYYY-MM-DD)',
+    DATE_BR = 'Data BR (DD/MM/AAAA)',
+    REMOVE_SPECIAL = 'Remover Caracteres Especiais'
+}
+
+export enum WMSFieldEnum {
+    // Pedidos
+    PEDIDO_NUMERO = 'pedido_numero',
+    PEDIDO_CLIENTE = 'pedido_cliente',
+    SKU_CODIGO = 'sku_codigo',
+    QUANTIDADE = 'quantidade',
+    LOTE = 'lote',
+    VALIDADE = 'validade',
+    UNIDADE = 'unidade', // CX, UN
+    
+    // Recebimento
+    NF_NUMERO = 'nf_numero',
+    FORNECEDOR = 'fornecedor',
+    PLACA = 'placa'
+}
+
+export const WMSFieldLabels: Record<WMSFieldEnum, string> = {
+    [WMSFieldEnum.PEDIDO_NUMERO]: 'Número do Pedido/Transporte',
+    [WMSFieldEnum.PEDIDO_CLIENTE]: 'Cliente',
+    [WMSFieldEnum.SKU_CODIGO]: 'Código SKU',
+    [WMSFieldEnum.QUANTIDADE]: 'Quantidade',
+    [WMSFieldEnum.LOTE]: 'Lote',
+    [WMSFieldEnum.VALIDADE]: 'Data de Validade',
+    [WMSFieldEnum.UNIDADE]: 'Unidade de Medida',
+    [WMSFieldEnum.NF_NUMERO]: 'Número da Nota Fiscal',
+    [WMSFieldEnum.FORNECEDOR]: 'Fornecedor',
+    [WMSFieldEnum.PLACA]: 'Placa Veículo'
+};
+
+export interface ImportMapping {
+    fileColumn: string; // Nome da coluna no Excel/CSV
+    wmsField: WMSFieldEnum; // Campo destino no WMS
+    required: boolean;
+    transformation: ImportTransformation;
+    defaultValue?: string; // Valor fixo caso venha vazio
+}
+
+export interface ImportTemplate {
+    id: string;
+    industriaId: string;
+    name: string;
+    type: 'PEDIDO' | 'RECEBIMENTO'; // O que este arquivo importa?
+    mappings: ImportMapping[];
+    active: boolean;
+}
+
+export interface ImportLog {
+    id: string;
+    timestamp: string;
+    templateId: string;
+    industriaId: string;
+    fileName: string;
+    status: 'SUCESSO' | 'FALHA' | 'PARCIAL';
+    totalRecords: number;
+    successCount: number;
+    errorCount: number;
+    errorsJson: string; // JSON com lista de erros detalhados
+    userId: string;
 }
