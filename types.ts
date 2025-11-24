@@ -25,6 +25,8 @@ export interface SKU {
   motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
   classificacaoABC?: 'A' | 'B' | 'C';
   foto?: string;
+  temperaturaMin?: number;
+  temperaturaMax?: number;
 }
 
 export interface Industria {
@@ -61,6 +63,8 @@ export interface Endereco {
   sre5?: string;
   motivoBloqueio?: string; // Armazena o ID do TipoBloqueio
   industriaId?: string;
+  zona?: string; // Ex: "Frio", "Seco", "Inflamavel"
+  sequenciaPicking?: number; // Para ordenar a rota
 }
 
 export interface Recebimento {
@@ -71,7 +75,6 @@ export interface Recebimento {
     temperaturaVeiculo: number;
     dataHoraChegada: string;
     etiquetasGeradas: number;
-    // Campos adicionados para o romaneio
     transportador?: string;
     lacre?: string;
     doca?: string;
@@ -86,6 +89,7 @@ export interface Recebimento {
     houveAvarias?: boolean;
     responsavel?: string;
     motorista?: string;
+    status: 'Aguardando' | 'Em Conferência' | 'Finalizado';
 }
 
 export enum EtiquetaStatus {
@@ -120,7 +124,6 @@ export interface PedidoItem {
     descricao: string;
     lote: string;
     quantidadeCaixas: number;
-    // Campos do arquivo de transporte
     unidadeArmazem?: string;
     totalUnidVda?: number;
     unidExpFracao?: number;
@@ -135,6 +138,9 @@ export interface Pedido {
     status: 'Pendente' | 'Em Separação' | 'Separado' | 'Em Conferência' | 'Conferência Parcial' | 'Aguardando Ressuprimento' | 'Conferido' | 'Expedido';
     createdAt: string;
     priority: boolean;
+    cliente?: string;
+    docaSaida?: string;
+    ondaId?: string;
 }
 
 export enum MissaoTipo {
@@ -159,6 +165,7 @@ export interface Missao {
     createdAt: string;
     startedAt?: string;
     finishedAt?: string;
+    prioridadeScore?: number; // IA Calculated Score
 }
 
 export interface PalletConsolidado {
@@ -196,7 +203,6 @@ export interface Divergencia {
     operadorId?: string;
     createdAt: string;
 }
-
 
 // Tipos para o módulo de Conferência Cega
 export enum ConferenciaErroTipo {
@@ -237,7 +243,6 @@ export interface ConferenciaErro {
   createdAt: string;
 }
 
-
 // Inventory Count Types
 export interface InventoryCountSession {
     id: string;
@@ -271,7 +276,6 @@ export interface InventoryCountItem {
     status: 'Pendente' | 'Contado' | 'Vazio' | 'Pulado';
     justification?: string;
 }
-
 
 // User Management Types
 export enum Permission {
@@ -348,4 +352,36 @@ export interface TipoBloqueio {
   codigo: string;
   descricao: string;
   aplicaA: BloqueioAplicaA[];
+}
+
+// --- NEW: AUDIT & TRACEABILITY ---
+export enum AuditActionType {
+    CREATE = 'Criação',
+    UPDATE = 'Atualização',
+    DELETE = 'Exclusão',
+    MOVE = 'Movimentação',
+    STATUS_CHANGE = 'Mudança de Status',
+    LOGIN = 'Login',
+    ERROR = 'Erro'
+}
+
+export interface AuditLog {
+    id: string;
+    timestamp: string;
+    userId: string;
+    userName: string;
+    actionType: AuditActionType;
+    entity: 'SKU' | 'Pedido' | 'Etiqueta' | 'Endereço' | 'Missão' | 'Recebimento' | 'Conferência' | 'Divergência';
+    entityId: string;
+    details: string;
+    metadata?: any; // Store "before" and "after" states
+}
+
+// --- NEW: RULES ENGINE ---
+export interface StorageRule {
+    id: string;
+    name: string;
+    condition: (sku: SKU, endereco: Endereco) => boolean;
+    priority: number; // 1 = Highest
+    action: 'ALLOW' | 'DENY' | 'PREFER';
 }

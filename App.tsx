@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
@@ -16,6 +15,7 @@ import RelatoriosPage from './pages/RelatoriosPage';
 import LoginPage from './pages/LoginPage';
 import ApontamentoPage from './pages/ApontamentoPage';
 import EstoquePage from './pages/EstoquePage';
+import OperadorPage from './pages/OperadorPage'; // Import new page
 import { WMSProvider } from './context/WMSContext';
 
 const App: React.FC = () => {
@@ -39,6 +39,7 @@ const App: React.FC = () => {
                         <Route element={<Layout onLogout={handleLogout} />}>
                             <Route index element={<Navigate to="/dashboard" replace />} />
                             <Route path="/dashboard" element={<DashboardPage />} />
+                            <Route path="/operador" element={<OperadorPage />} />
                             <Route path="/recebimento" element={<RecebimentoPage />} />
                             <Route path="/apontamento" element={<ApontamentoPage />} />
                             <Route path="/armazenagem" element={<ArmazenagemPage />} />
