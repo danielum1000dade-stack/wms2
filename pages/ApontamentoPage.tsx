@@ -1,15 +1,12 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Etiqueta, EtiquetaStatus, SKU } from '../types';
 import { CameraIcon, ListBulletIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import SKUModal from '../components/SKUModal';
-
-declare const Html5QrcodeScanner: any;
+import BarcodeScanner from '../components/BarcodeScanner';
 
 const ApontamentoPage: React.FC = () => {
-    // FIX: Added `industrias` and `tiposBloqueio` to context destructuring to pass to SKUModal.
     const { getEtiquetasPendentesApontamento, apontarEtiqueta, getEtiquetaById, skus, addSku, industrias, tiposBloqueio } = useWMS();
     const [etiquetaId, setEtiquetaId] = useState('');
     const [formData, setFormData] = useState({ skuId: '', quantidadeCaixas: '', lote: '', validade: '', observacoes: '' });
@@ -18,7 +15,6 @@ const ApontamentoPage: React.FC = () => {
     const [success, setSuccess] = useState('');
     const [warning, setWarning] = useState('');
     const [isScanning, setIsScanning] = useState(false);
-    const scannerRef = useRef<any>(null);
 
     // SKU Input states
     const [skuInput, setSkuInput] = useState('');
@@ -26,43 +22,21 @@ const ApontamentoPage: React.FC = () => {
     const [skuError, setSkuError] = useState('');
     const [isSkuModalOpen, setIsSkuModalOpen] = useState(false);
 
-
     const pendentes = getEtiquetasPendentesApontamento();
 
-    useEffect(() => {
-        if (isScanning) {
-            scannerRef.current = new Html5QrcodeScanner(
-                "reader",
-                { fps: 10, qrbox: { width: 250, height: 250 } },
-                false
-            );
-            scannerRef.current.render(onScanSuccess, onScanFailure);
-        } else {
-            if (scannerRef.current && scannerRef.current.getState() !== 1) { // 1 is NOT_STARTED
-                scannerRef.current.clear().catch((err: any) => console.error("Failed to clear scanner", err));
-            }
-        }
-        return () => {
-             if (scannerRef.current && scannerRef.current.getState() !== 1) {
-                scannerRef.current.clear().catch((err: any) => console.error("Failed to clear scanner", err));
-            }
-        };
-    }, [isScanning]);
-
-    const onScanSuccess = (decodedText: string) => {
+    const handleScanSuccess = (decodedText: string) => {
         setEtiquetaId(decodedText);
         handleEtiquetaChange(decodedText);
         setIsScanning(false);
     };
-
-    const onScanFailure = (errorMessage: string) => { /* ignore */ };
     
     const handleEtiquetaChange = (id: string) => {
-        setEtiquetaId(id);
+        const upperId = id.toUpperCase();
+        setEtiquetaId(upperId);
         setError('');
         setSuccess('');
         setWarning('');
-        const etiqueta = getEtiquetaById(id);
+        const etiqueta = getEtiquetaById(upperId);
         if (etiqueta && etiqueta.status === EtiquetaStatus.PENDENTE_APONTAMENTO) {
             setSelectedEtiqueta(etiqueta);
         } else {
@@ -182,7 +156,11 @@ const ApontamentoPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {isScanning && <div id="reader" className="w-full md:w-auto mx-auto my-4 border rounded-lg"></div>}
+                    {isScanning && (
+                        <div className="mb-4 border rounded-lg overflow-hidden bg-black">
+                            <BarcodeScanner onScanSuccess={handleScanSuccess} />
+                        </div>
+                    )}
                     
                     {selectedEtiqueta && (
                          <form onSubmit={handleSubmit} className="space-y-4 animate-fade-in">
@@ -266,10 +244,9 @@ const ApontamentoPage: React.FC = () => {
             </div>
              {isSkuModalOpen && (
                 <SKUModal 
-                    sku={{ sku: skuInput }} // Pre-fill the SKU code the user typed
+                    sku={{ sku: skuInput }} 
                     onSave={handleSaveNewSku}
                     onClose={() => setIsSkuModalOpen(false)}
-                    // FIX: Passed missing `industrias` and `tiposBloqueio` props.
                     industrias={industrias}
                     tiposBloqueio={tiposBloqueio}
                 />
