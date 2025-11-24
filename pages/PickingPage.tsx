@@ -126,29 +126,26 @@ const ActivePickingView: React.FC<{
         return (endA?.codigo || '').localeCompare(endB?.codigo || '');
     }), [activeGroup, enderecos]);
 
-    const [currentIndex, setCurrentIndex] = useState(0);
     const [step, setStep] = useState<'SCAN_ADDRESS' | 'ENTER_QUANTITY'>('SCAN_ADDRESS');
     const [inputValue, setInputValue] = useState('');
     const [error, setError] = useState('');
     const [showDivergenceModal, setShowDivergenceModal] = useState(false);
     const [showSummaryModal, setShowSummaryModal] = useState(false);
+    const [overrideIndex, setOverrideIndex] = useState<number | null>(null);
 
-    useEffect(() => {
-        // Encontra o índice da primeira missão que não está concluída.
-        const firstPendingIndex = allMissions.findIndex(m => m.status !== 'Concluída');
-        // Se todas estiverem concluídas, o findIndex retorna -1. Nesse caso, o índice é o total de missões (fim).
-        // Caso contrário, usa o índice da primeira pendente.
-        setCurrentIndex(firstPendingIndex === -1 ? allMissions.length : firstPendingIndex);
+    const naturalNextIndex = useMemo(() => {
+        return allMissions.findIndex(m => m.status !== 'Concluída');
     }, [allMissions]);
 
+    const currentIndex = overrideIndex ?? (naturalNextIndex === -1 ? allMissions.length : naturalNextIndex);
+    const currentMission = allMissions[currentIndex];
+
     useEffect(() => {
-        // Reseta o passo, o input e o erro sempre que o índice da missão atual mudar.
         setStep('SCAN_ADDRESS');
         setInputValue('');
         setError('');
     }, [currentIndex]);
 
-    const currentMission = allMissions[currentIndex];
     const missionSku = skus.find(s => s.id === currentMission?.skuId);
     const missionAddress = enderecos.find(e => e.id === currentMission?.origemId);
     const missionEtiqueta = etiquetas.find(e => e.id === currentMission?.etiquetaId);
@@ -170,6 +167,7 @@ const ActivePickingView: React.FC<{
                 const qty = parseInt(inputValue, 10);
                 if (!isNaN(qty) && qty >= 0 && qty <= currentMission.quantidade) {
                      if (window.confirm(`Confirmar a coleta de ${qty} caixas do SKU ${missionSku?.sku}?`)) {
+                        setOverrideIndex(null);
                         onCompleteMission(currentMission.id, qty);
                     }
                 } else {
@@ -180,6 +178,7 @@ const ActivePickingView: React.FC<{
     };
     
     const handleConfirmDivergence = (missionId: string, reason: string) => {
+        setOverrideIndex(null);
         onCompleteMission(missionId, 0, reason);
         setShowDivergenceModal(false);
     };
@@ -187,7 +186,7 @@ const ActivePickingView: React.FC<{
     const handleSelectMission = (missionId: string) => {
         const newIndex = allMissions.findIndex(m => m.id === missionId);
         if (newIndex !== -1 && allMissions[newIndex].status !== 'Concluída') {
-            setCurrentIndex(newIndex);
+            setOverrideIndex(newIndex);
         }
     };
 
@@ -350,104 +349,111 @@ const AvailablePickingList: React.FC<{
     );
 };
 
+const groupAndSortMissions = (
+    missionList: Missao[],
+    pedidos: Pedido[],
+    skus: SKU[],
+    enderecos: Endereco[]
+): GroupedTransport[] => {
+     const groupedByTransport = missionList.reduce((acc, mission) => {
+        const pedidoId = mission.pedidoId;
+        if (!pedidoId) return acc;
+        if (!acc[pedidoId]) acc[pedidoId] = [];
+        acc[pedidoId].push(mission);
+        return acc;
+    }, {} as Record<string, Missao[]>);
+
+    return Object.entries(groupedByTransport).map(([pedidoId, transportMissions]) => {
+        const pedido = pedidos.find(p => p.id === pedidoId)!;
+
+        const groupedByFamily = transportMissions.reduce((acc, mission) => {
+            const sku = skus.find(s => s.id === mission.skuId);
+            const family = sku?.familia || 'Sem Família';
+            if (!acc[family]) acc[family] = [];
+            acc[family].push(mission);
+            return acc;
+        }, {} as Record<string, Missao[]>);
+
+        const families = Object.entries(groupedByFamily).map(([familyName, familyMissions]) => {
+            const groupedByAddress = familyMissions.reduce((acc, mission) => {
+                const addressId = mission.origemId;
+                if (!acc[addressId]) acc[addressId] = [];
+                acc[addressId].push(mission);
+                return acc;
+            }, {} as Record<string, Missao[]>);
+
+            const addresses = Object.entries(groupedByAddress)
+                .map(([addressId, addressMissions]) => ({
+                    address: enderecos.find(e => e.id === addressId)!,
+                    missions: addressMissions,
+                }))
+                .filter(item => item.address)
+                .sort((a, b) => a.address.codigo.localeCompare(b.address.codigo));
+
+            return {
+                familyName,
+                addresses,
+                totalItems: familyMissions.length,
+            };
+        });
+
+        return { pedido, families };
+    }).filter(item => item.pedido)
+    .sort((a, b) => {
+         if (a.pedido.priority && !b.pedido.priority) return -1;
+         if (!a.pedido.priority && b.pedido.priority) return 1;
+         return new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime();
+    });
+};
+
 
 const PickingPage: React.FC = () => {
     const { missoes, pedidos, skus, enderecos, etiquetas, assignFamilyMissionsToOperator, updateMissionStatus, revertMissionGroup } = useWMS();
     const currentUserId = 'admin_user';
 
-    const [myActiveGroup, setMyActiveGroup] = useState<GroupedTransport | null>(null);
-    const [explicitlyFinishedPedidoId, setExplicitlyFinishedPedidoId] = useState<string | null>(null);
+    const [activePedidoId, setActivePedidoId] = useState<string | null>(null);
 
-    const groupAndSortMissions = (missionList: Missao[]): GroupedTransport[] => {
-         const groupedByTransport = missionList.reduce((acc, mission) => {
-            const pedidoId = mission.pedidoId;
-            if (!pedidoId) return acc;
-            if (!acc[pedidoId]) acc[pedidoId] = [];
-            acc[pedidoId].push(mission);
-            return acc;
-        }, {} as Record<string, Missao[]>);
-
-        return Object.entries(groupedByTransport).map(([pedidoId, transportMissions]) => {
-            const pedido = pedidos.find(p => p.id === pedidoId)!;
-
-            const groupedByFamily = transportMissions.reduce((acc, mission) => {
-                const sku = skus.find(s => s.id === mission.skuId);
-                const family = sku?.familia || 'Sem Família';
-                if (!acc[family]) acc[family] = [];
-                acc[family].push(mission);
-                return acc;
-            }, {} as Record<string, Missao[]>);
-
-            const families = Object.entries(groupedByFamily).map(([familyName, familyMissions]) => {
-                const groupedByAddress = familyMissions.reduce((acc, mission) => {
-                    const addressId = mission.origemId;
-                    if (!acc[addressId]) acc[addressId] = [];
-                    acc[addressId].push(mission);
-                    return acc;
-                }, {} as Record<string, Missao[]>);
-
-                const addresses = Object.entries(groupedByAddress)
-                    .map(([addressId, addressMissions]) => ({
-                        address: enderecos.find(e => e.id === addressId)!,
-                        missions: addressMissions,
-                    }))
-                    .filter(item => item.address)
-                    .sort((a, b) => a.address.codigo.localeCompare(b.address.codigo));
-
-                return {
-                    familyName,
-                    addresses,
-                    totalItems: familyMissions.length,
-                };
-            });
-
-            return { pedido, families };
-        }).filter(item => item.pedido)
-        .sort((a, b) => {
-             if (a.pedido.priority && !b.pedido.priority) return -1;
-             if (!a.pedido.priority && b.pedido.priority) return 1;
-             return new Date(a.pedido.createdAt).getTime() - new Date(b.pedido.createdAt).getTime();
-        });
-    };
-    
     useEffect(() => {
-        const relevantMissions = missoes.filter(m => m.operadorId === currentUserId);
-        
-        // Um grupo está "ativo" se houver pelo menos uma missão que não esteja 'Pendente'.
-        // Ignora grupos que o usuário finalizou explicitamente nesta sessão.
-        const activeMission = relevantMissions.find(m => m.status !== 'Pendente' && m.pedidoId !== explicitlyFinishedPedidoId);
-    
-        if (activeMission && activeMission.pedidoId) {
-            const activePedidoId = activeMission.pedidoId;
-            
-            // Reúne TODAS as missões do grupo ativo para este usuário, incluindo as concluídas.
-            const allMissionsForActiveGroup = missoes.filter(m =>
-                m.pedidoId === activePedidoId &&
-                m.operadorId === currentUserId
+        if (!activePedidoId) {
+            const missionInProgress = missoes.find(m => 
+                m.operadorId === currentUserId && 
+                (m.status === 'Atribuída' || m.status === 'Em Andamento')
             );
-    
-            if (allMissionsForActiveGroup.length > 0) {
-                const grouped = groupAndSortMissions(allMissionsForActiveGroup);
-                setMyActiveGroup(grouped[0] || null);
-            } else {
-                 setMyActiveGroup(null);
+            if (missionInProgress?.pedidoId) {
+                setActivePedidoId(missionInProgress.pedidoId);
             }
-        } else {
-            // Se não houver missões não-pendentes (ou o grupo foi finalizado), não há grupo ativo.
-            setMyActiveGroup(null);
         }
-    }, [missoes, currentUserId, pedidos, skus, enderecos, explicitlyFinishedPedidoId]);
+    }, [missoes, activePedidoId, currentUserId]);
+    
+    const myActiveGroup = useMemo(() => {
+        if (!activePedidoId) {
+            return null;
+        }
+
+        const allMissionsForActiveGroup = missoes.filter(m =>
+            m.pedidoId === activePedidoId &&
+            m.operadorId === currentUserId
+        );
+
+        if (allMissionsForActiveGroup.length === 0) {
+            return null; 
+        }
+        
+        const grouped = groupAndSortMissions(allMissionsForActiveGroup, pedidos, skus, enderecos);
+        return grouped[0] || null;
+
+    }, [missoes, activePedidoId, currentUserId, pedidos, skus, enderecos]);
 
 
     const availableGroups = useMemo(() => {
         const pendingMissions = missoes.filter(m =>
             (m.tipo === MissaoTipo.PICKING || m.tipo === MissaoTipo.REABASTECIMENTO) && m.status === 'Pendente'
         );
-        return groupAndSortMissions(pendingMissions);
+        return groupAndSortMissions(pendingMissions, pedidos, skus, enderecos);
     }, [missoes, pedidos, skus, enderecos]);
     
     const handleStartGroup = (pedidoId: string, familia: string) => {
-        setExplicitlyFinishedPedidoId(null);
+        setActivePedidoId(pedidoId);
         assignFamilyMissionsToOperator(pedidoId, familia, currentUserId);
     };
 
@@ -456,16 +462,13 @@ const PickingPage: React.FC = () => {
     };
 
     const handleFinishGroup = () => {
-        if (myActiveGroup) {
-            setExplicitlyFinishedPedidoId(myActiveGroup.pedido.id);
-        }
-        setMyActiveGroup(null);
+        setActivePedidoId(null);
     };
 
     const handleRevertGroup = (missionIds: string[]) => {
         if(window.confirm("Tem certeza que deseja estornar este grupo de missões? Elas voltarão para a fila de pendentes.")) {
             revertMissionGroup(missionIds);
-            setMyActiveGroup(null);
+            setActivePedidoId(null);
         }
     };
 
