@@ -144,11 +144,16 @@ model Recebimento {
   doca String?
   dataPrevista String?
   horaPrevista String?
+  horaInicioDescarga String?
+  horaFimDescarga String?
+  temperaturaTermoKing Float?
+  temperaturaInicio Float?
+  temperaturaMeio Float?
+  temperaturaFim Float?
+  responsavel String?
+  motorista String?
   status String
   houveAvarias Boolean @default(false)
-  
-  // Campos adicionais simplificados
-  detalhes Json? // Para armazenar termoking, temperaturas in/meio/fim, etc
   
   etiquetas Etiqueta[]
 }
@@ -161,6 +166,7 @@ model Etiqueta {
   skuId String?
   sku Sku? @relation(fields: [skuId], references: [id])
   quantidadeCaixas Int?
+  quantidadeOriginal Int?
   lote String?
   validade DateTime?
   observacoes String?
@@ -168,6 +174,8 @@ model Etiqueta {
   endereco Endereco? @relation(fields: [enderecoId], references: [id])
   dataApontamento DateTime?
   dataArmazenagem DateTime?
+  dataExpedicao DateTime?
+  palletConsolidadoId String?
   isBlocked Boolean @default(false)
   motivoBloqueio String?
 }
@@ -179,6 +187,8 @@ model Pedido {
   createdAt DateTime @default(now())
   priority Boolean @default(false)
   cliente String?
+  docaSaida String?
+  ondaId String?
   items Json // Array de PedidoItem
   origemImportacao String?
 }
@@ -282,7 +292,10 @@ const createCrud = (modelName: string, path: string) => {
         data: req.body
       });
       res.json(item);
-    } catch (e) { res.status(500).json({ error: String(e) }); }
+    } catch (e) { 
+      console.error(e);
+      res.status(500).json({ error: String(e) }); 
+    }
   });
 
   // DELETE
@@ -339,3 +352,4 @@ fs.writeFileSync(path.join(prismaDir, 'schema.prisma'), prismaSchema);
 
 console.log("\n✅ Estrutura Backend criada em /server");
 console.log("IMPORTANTE: Configure a senha do seu MySQL no arquivo /server/.env");
+console.log("DEPOIS: Rode 'npm run server:install' e 'npm run server:db:push' para inicializar o banco.");

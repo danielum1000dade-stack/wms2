@@ -1,7 +1,7 @@
 {
   "name": "wms-pro-2025",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "setup": "node install.js",
     "setup:mysql": "node setup-mysql.js",
+    "server:install": "cd server && npm install",
+    "server:db:push": "cd server && npx prisma db push",
     "server": "cd server && npm run dev",
     "start:all": "concurrently \"npm run server\" \"npm run dev\""
   },
