@@ -2,32 +2,18 @@
 import React, { useState } from 'react';
 import { useWMS } from '../context/WMSContext';
 import { Pedido } from '../types';
-import ImportExcelModal from '../components/ImportExcelModal';
+import { useNavigate } from 'react-router-dom'; // Import useNavigate
 import { ArrowUpTrayIcon, CubeIcon, PlayCircleIcon, StarIcon as StarSolidIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline';
 
 
-// FIX: Defined ColumnConfig interface locally to ensure type safety for excel import configurations.
-interface ColumnConfig {
-    [key: string]: {
-        type: 'string' | 'number';
-        required: boolean;
-        enum?: string[];
-    };
-}
-
 const PedidosPage: React.FC = () => {
-    const { pedidos, processTransportData, generateMissionsForPedido, updatePedido, reabrirSeparacao } = useWMS();
-    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const { pedidos, generateMissionsForPedido, updatePedido, reabrirSeparacao } = useWMS();
+    const navigate = useNavigate(); // Initialize hook
+    
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error', message: string } | null>(null);
     const [reopenModalState, setReopenModalState] = useState<{ isOpen: boolean, pedido: Pedido | null }>({ isOpen: false, pedido: null });
     const [reopenReason, setReopenReason] = useState('');
-
-    const handleImport = async (data: any[]) => {
-        const result = await processTransportData(data);
-        setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
-        setTimeout(() => setFeedback(null), 5000);
-    };
 
     const handleGenerateMissions = (pedidoId: string) => {
         const result = generateMissionsForPedido(pedidoId);
@@ -50,21 +36,6 @@ const PedidosPage: React.FC = () => {
         setFeedback({ type: result.success ? 'success' : 'error', message: result.message });
         setReopenModalState({ isOpen: false, pedido: null });
         setTimeout(() => setFeedback(null), 5000);
-    };
-
-
-    // FIX: Explicitly typed column config to match expected prop type in ImportExcelModal.
-    const columnConfig: ColumnConfig = {
-        'Nº transporte': { type: 'string', required: true },
-        'Cód.Item': { type: 'string', required: true },
-        'Descrição do Produto': { type: 'string', required: true },
-        'Lote': { type: 'string', required: true },
-        'Unid.Armaz.': { type: 'string', required: false },
-        'Total(Unid.Vda.)': { type: 'number', required: false },
-        'Unid.Exp.(Caixa)': { type: 'number', required: true },
-        'Unid.Exp.(Fração)': { type: 'number', required: false },
-        'Peso Bruto': { type: 'number', required: false },
-        'Peso Líquido': { type: 'number', required: false },
     };
 
     const getStatusClass = (status: Pedido['status']) => {
@@ -91,10 +62,10 @@ const PedidosPage: React.FC = () => {
             <div className="flex justify-between items-center">
                 <h1 className="text-3xl font-bold text-gray-900">Gerenciar Pedidos de Transporte</h1>
                 <button
-                    onClick={() => setIsImportModalOpen(true)}
+                    onClick={() => navigate('/importacao')} // Redirect to centralized import page
                     className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-lg shadow-md hover:bg-indigo-700 transition-colors"
                 >
-                    <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Importar Pedidos
+                    <ArrowUpTrayIcon className="h-5 w-5 mr-2" /> Ir para Importação de Arquivos
                 </button>
             </div>
 
@@ -159,7 +130,7 @@ const PedidosPage: React.FC = () => {
                                         <CubeIcon className="mx-auto h-12 w-12 text-gray-400"/>
                                         <h3 className="mt-2 text-sm font-medium text-gray-900">Nenhum pedido encontrado</h3>
                                         <p className="mt-1 text-sm text-gray-500">
-                                            Importe um novo arquivo de pedidos para começar.
+                                            Importe um novo arquivo de pedidos na aba "Importação de Arquivos".
                                         </p>
                                     </td>
                                 </tr>
@@ -168,15 +139,6 @@ const PedidosPage: React.FC = () => {
                     </table>
                 </div>
             </div>
-
-            {isImportModalOpen && (
-                <ImportExcelModal
-                    title="Importar Arquivo de Transporte"
-                    columnConfig={columnConfig}
-                    onImport={handleImport}
-                    onClose={() => setIsImportModalOpen(false)}
-                />
-            )}
 
             {reopenModalState.isOpen && reopenModalState.pedido && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">

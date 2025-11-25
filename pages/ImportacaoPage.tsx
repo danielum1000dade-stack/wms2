@@ -21,13 +21,19 @@ const ImportacaoPage: React.FC = () => {
             setFile(f);
             const reader = new FileReader();
             reader.onload = (evt) => {
-                const bstr = evt.target?.result;
-                const wb = XLSX.read(bstr, { type: 'binary' });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const data = XLSX.utils.sheet_to_json(ws);
-                setPreviewData(data);
-                setSimulationResult(null);
+                try {
+                    const bstr = evt.target?.result;
+                    const wb = XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const ws = wb.Sheets[wsname];
+                    // FIX: Added cellDates: true to correctly parse Excel dates
+                    const data = XLSX.utils.sheet_to_json(ws, { cellDates: true });
+                    setPreviewData(data);
+                    setSimulationResult(null);
+                } catch (error) {
+                    console.error("Erro ao ler arquivo:", error);
+                    alert("Erro ao ler o arquivo. Verifique se é um Excel válido.");
+                }
             };
             reader.readAsBinaryString(f);
         }
@@ -41,9 +47,15 @@ const ImportacaoPage: React.FC = () => {
         setIsProcessing(true);
         // Small timeout to allow UI to update to "Processing" state
         setTimeout(async () => {
-            const result = await processImportFile(previewData, template, file.name, true);
-            setSimulationResult(result);
-            setIsProcessing(false);
+            try {
+                const result = await processImportFile(previewData, template, file.name, true);
+                setSimulationResult(result);
+            } catch (error) {
+                console.error("Erro na simulação:", error);
+                alert("Ocorreu um erro durante a simulação. Verifique o console para mais detalhes.");
+            } finally {
+                setIsProcessing(false);
+            }
         }, 100);
     };
 
@@ -55,17 +67,24 @@ const ImportacaoPage: React.FC = () => {
         if (confirm("Confirma a importação oficial destes dados?")) {
             setIsProcessing(true);
             setTimeout(async () => {
-                const result = await processImportFile(previewData, template, file.name, false);
-                if (result.success) {
-                    alert(`Importação concluída com sucesso! ${result.total} registros processados.`);
-                    setFile(null);
-                    setPreviewData([]);
-                    setSimulationResult(null);
-                    setSelectedTemplateId('');
-                } else {
-                    alert("Erro na importação. Verifique os logs.");
+                try {
+                    const result = await processImportFile(previewData, template, file.name, false);
+                    if (result.success) {
+                        alert(`Importação concluída com sucesso! ${result.total} registros processados.`);
+                        setFile(null);
+                        setPreviewData([]);
+                        setSimulationResult(null);
+                        setSelectedTemplateId('');
+                        // Optional: Reset file input manually if needed
+                    } else {
+                        alert("Erro na importação. Verifique os logs ou a lista de erros.");
+                    }
+                } catch (error) {
+                    console.error("Erro na importação:", error);
+                    alert("Falha crítica ao processar importação.");
+                } finally {
+                    setIsProcessing(false);
                 }
-                setIsProcessing(false);
             }, 100);
         }
     };

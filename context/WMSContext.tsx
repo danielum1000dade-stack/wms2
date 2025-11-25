@@ -273,6 +273,15 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         // Helper: Transform Value
         const transformValue = (val: any, type: ImportTransformation): any => {
+            // FIX: Handle Excel Date Objects coming from cellDates: true
+            if (val instanceof Date) {
+                if (type === ImportTransformation.DATE_ISO || type === ImportTransformation.DATE_BR) {
+                    // Return ISO string YYYY-MM-DD
+                    return val.toISOString().split('T')[0];
+                }
+                return val.toISOString();
+            }
+
             if (val === undefined || val === null) return val;
             const strVal = String(val).trim();
             switch (type) {
