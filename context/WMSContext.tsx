@@ -614,16 +614,16 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     };
 
-    const updateMissionStatus = (id: string, status: any, uid?: string, qty?: number, divergenceReason?: string, observation?: string) => {
+    const updateMissionStatus = (missionId: string, status: Missao['status'], operadorId?: string, completedQuantity?: number, divergenceReason?: string, observation?: string) => {
         setMissoes(prev => prev.map(m => {
-            if(m.id === id) {
+            if(m.id === missionId) {
                 if(status === 'Concluída' && m.tipo === MissaoTipo.PICKING) {
                     const e = etiquetas.find(et => et.id === m.etiquetaId);
-                    if(e) updateEtiqueta({...e, quantidadeCaixas: Math.max(0, (e.quantidadeCaixas||0) - (qty || m.quantidade))});
+                    if(e) updateEtiqueta({...e, quantidadeCaixas: Math.max(0, (e.quantidadeCaixas||0) - (completedQuantity || m.quantidade))});
                 } else if (status === 'Concluída' && m.tipo === MissaoTipo.REABASTECIMENTO) {
                     armazenarEtiqueta(m.etiquetaId, m.destinoId);
                 }
-                return {...m, status, operadorId: uid || m.operadorId};
+                return {...m, status, operadorId: operadorId || m.operadorId};
             }
             return m;
         }));

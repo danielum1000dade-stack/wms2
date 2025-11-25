@@ -203,7 +203,8 @@ export enum MissaoTipo {
     MOVIMENTACAO_PALLET = 'Movimentação de Pallet',
     TRANSFERENCIA = 'Transferência',
     CONFERENCIA_CEGA = 'Conferência Cega',
-    INVENTARIO = 'Inventário'
+    INVENTARIO = 'Inventário',
+    ARMAZENAGEM = 'Armazenagem'
 }
 
 export interface Missao {
