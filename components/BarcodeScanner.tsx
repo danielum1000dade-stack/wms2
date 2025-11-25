@@ -24,34 +24,39 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
     const [selectedCameraId, setSelectedCameraId] = useState<string>('');
     const [isScanning, setIsScanning] = useState(false);
     const scannerRef = useRef<any>(null);
+    const isMounted = useRef(true);
 
     useEffect(() => {
+        isMounted.current = true;
         // Inicialização: Listar Câmeras
         const initCameras = async () => {
             try {
                 if (typeof Html5Qrcode === 'undefined') {
-                    setError("Biblioteca de scanner não carregada. Verifique a conexão.");
+                    if (isMounted.current) setError("Biblioteca de scanner não carregada. Verifique a conexão.");
                     return;
                 }
 
                 const devices = await Html5Qrcode.getCameras();
                 if (devices && devices.length) {
-                    setCameras(devices);
-                    // Tenta pegar a câmera traseira por padrão (geralmente a última ou com label 'back')
-                    const backCamera = devices.find((d: any) => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
-                    setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+                    if (isMounted.current) {
+                        setCameras(devices);
+                        // Tenta pegar a câmera traseira por padrão
+                        const backCamera = devices.find((d: any) => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
+                        setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+                    }
                 } else {
-                    setError("Nenhuma câmera encontrada.");
+                    if (isMounted.current) setError("Nenhuma câmera encontrada.");
                 }
             } catch (err) {
                 console.error("Erro ao listar câmeras", err);
-                setError("Permissão de câmera negada ou erro no dispositivo.");
+                if (isMounted.current) setError("Permissão de câmera negada ou erro no dispositivo.");
             }
         };
 
         initCameras();
 
         return () => {
+            isMounted.current = false;
             stopScanner();
         };
     }, []);
@@ -60,12 +65,17 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
         if (selectedCameraId) {
             startScanner(selectedCameraId);
         }
+        return () => {
+            stopScanner();
+        };
     }, [selectedCameraId]);
 
     const startScanner = async (cameraId: string) => {
         if (scannerRef.current) {
             await stopScanner();
         }
+
+        if (!isMounted.current) return;
 
         const html5QrCode = new Html5Qrcode(scannerRegionId);
         scannerRef.current = html5QrCode;
@@ -79,29 +89,47 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
                     aspectRatio: 1.0
                 },
                 (decodedText: string) => {
-                    // Success Callback
-                    // Debounce logic handled by caller or UI state change usually, 
-                    // but we can add a vibration here
-                    if (navigator.vibrate) navigator.vibrate(200);
-                    onScanSuccess(decodedText);
+                    if (isMounted.current) {
+                        if (navigator.vibrate) navigator.vibrate(200);
+                        onScanSuccess(decodedText);
+                    }
                 },
                 (errorMessage: string) => {
-                    // Failure Callback (Scanning...)
-                    if (onScanFailure) onScanFailure(errorMessage);
+                    if (isMounted.current && onScanFailure) onScanFailure(errorMessage);
                 }
             );
-            setIsScanning(true);
-            setError(null);
-        } catch (err) {
-            console.error("Erro ao iniciar scanner", err);
-            setError("Falha ao iniciar o vídeo. Tente outra câmera.");
-            setIsScanning(false);
+            if (isMounted.current) {
+                setIsScanning(true);
+                setError(null);
+            } else {
+                // If unmounted during start, ensure we stop
+                await stopScanner();
+            }
+        } catch (err: any) {
+            // Handle specific DOMException for interrupted play
+            if (err?.name === 'NotAllowedError') {
+                if (isMounted.current) setError("Permissão de câmera negada.");
+            } else if (err?.name === 'NotFoundError') {
+                if (isMounted.current) setError("Nenhuma câmera encontrada.");
+            } else if (err?.name === 'NotReadableError') {
+                if (isMounted.current) setError("A câmera está sendo usada por outro aplicativo.");
+            } else if (err?.message?.includes("interrupted") || err?.name === "AbortError") {
+                // Ignore "The play() request was interrupted" error caused by rapid unmounting
+                console.debug("Camera start interrupted (cleanup).");
+                return;
+            } else {
+                console.error("Erro ao iniciar scanner", err);
+                if (isMounted.current) setError("Falha ao iniciar o vídeo. Tente outra câmera.");
+            }
+            
+            if (isMounted.current) setIsScanning(false);
         }
     };
 
     const stopScanner = async () => {
         if (scannerRef.current) {
             try {
+                // Only attempt to stop if it is reported as scanning to avoid invalid state errors
                 if (scannerRef.current.isScanning) {
                     await scannerRef.current.stop();
                 }
@@ -110,7 +138,7 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
                 console.warn("Erro ao parar scanner", err);
             }
             scannerRef.current = null;
-            setIsScanning(false);
+            if (isMounted.current) setIsScanning(false);
         }
     };
 

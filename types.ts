@@ -517,3 +517,11 @@ export interface ImportLog {
     errorsJson: string; // JSON com lista de erros detalhados
     userId: string;
 }
+
+export interface PrinterConfig {
+    type: 'ZEBRA_NETWORK' | 'ZEBRA_USB' | 'PDF_FALLBACK';
+    ip?: string;
+    port?: string;
+    zplDensity?: number; // 8dpmm (203dpi) or 12dpmm (300dpi)
+    labelSize?: { width: number, height: number }; // in mm
+}

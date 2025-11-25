@@ -13,7 +13,7 @@ import {
     AuditLog, AuditActionType,
     CategoriaProduto, SetorArmazem,
     ImportTemplate, ImportLog, ImportMapping, WMSFieldEnum, ImportTransformation,
-    IndustriaRegras
+    IndustriaRegras, PrinterConfig
 } from '../types';
 
 declare const XLSX: any;
@@ -189,6 +189,11 @@ interface WMSContextType {
     deleteImportTemplate: (id: string) => void;
     importLogs: ImportLog[];
     processImportFile: (fileData: any[], template: ImportTemplate, fileName: string, simulate?: boolean) => Promise<ImportResult>;
+
+    // Printer Config
+    printerConfig: PrinterConfig;
+    savePrinterConfig: (config: PrinterConfig) => void;
+    generatePalletLabelZPL: (etiqueta: Etiqueta) => string;
 }
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
@@ -224,6 +229,13 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         replenishmentThreshold: 25, 
     });
 
+    // Printer Configuration
+    const [printerConfig, setPrinterConfig] = useLocalStorage<PrinterConfig>('wms_printer_config', {
+        type: 'PDF_FALLBACK',
+        zplDensity: 8,
+        labelSize: { width: 100, height: 150 }
+    });
+
     const [conferencias, setConferencias] = useLocalStorage<Conferencia[]>('wms_conferencias', []);
     const [conferenciaItems, setConferenciaItems] = useLocalStorage<ConferenciaItem[]>('wms_conferencia_items', []);
     const [conferenciaErros, setConferenciaErros] = useLocalStorage<ConferenciaErro[]>('wms_conferencia_erros', []);
@@ -250,6 +262,74 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             metadata
         };
         setAuditLogs(prev => [newLog, ...prev]);
+    };
+
+    // --- ZPL ENGINE ---
+    const savePrinterConfig = (config: PrinterConfig) => {
+        setPrinterConfig(config);
+    };
+
+    const generatePalletLabelZPL = (etiqueta: Etiqueta): string => {
+        const sku = skus.find(s => s.id === etiqueta.skuId);
+        const recebimento = recebimentos.find(r => r.id === etiqueta.recebimentoId);
+        const industria = sku?.industriaId ? industrias.find(i => i.id === sku.industriaId)?.nome : 'INTERNO';
+        
+        // Sanitization helper
+        const clean = (str: string = '') => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().substring(0, 30);
+
+        // ZPL Layout (10x15cm approx)
+        // ^XA = Start
+        // ^PW800 = Print Width (approx 4 inches at 203dpi)
+        // ^LL1200 = Label Length (approx 6 inches)
+        // ^FO = Field Origin
+        // ^A0N = Font
+        // ^FD = Field Data
+        // ^BC = Code 128 Barcode
+        // ^BQ = QR Code
+        // ^XZ = End
+
+        const zpl = `
+^XA
+^PW800
+^LL1200
+^FO20,20^GB760,1160,4^FS
+
+^FO50,50^A0N,40,40^FDPRODUTO:^FS
+^FO50,90^A0N,60,60^FD${clean(sku?.descritivo)}^FS
+^FO50,160^A0N,30,30^FDSKU: ${clean(sku?.sku)} | UN: ${sku?.unidadeMedida}^FS
+
+^FO50,220^GB700,2,2^FS
+
+^FO50,250^A0N,40,40^FDLOTE:^FS
+^FO200,250^A0N,40,40^FD${clean(etiqueta.lote)}^FS
+
+^FO400,250^A0N,40,40^FDVAL:^FS
+^FO500,250^A0N,40,40^FD${etiqueta.validade || 'N/A'}^FS
+
+^FO50,320^A0N,40,40^FDQTD:^FS
+^FO150,310^A0N,70,70^FD${etiqueta.quantidadeCaixas}^FS
+
+^FO400,320^A0N,40,40^FDPESO:^FS
+^FO520,320^A0N,40,40^FD${sku?.peso ? sku.peso + ' KG' : 'N/A'}^FS
+
+^FO50,400^GB700,2,2^FS
+
+^FO50,430^A0N,30,30^FDCLIENTE / PROPRIETARIO:^FS
+^FO50,470^A0N,40,40^FD${clean(industria)}^FS
+
+^FO50,530^A0N,30,30^FDRECEBIMENTO: ${recebimento?.notaFiscal || 'N/A'}^FS
+^FO400,530^A0N,30,30^FDPLACA: ${recebimento?.placaVeiculo || 'N/A'}^FS
+
+^FO150,650^BQN,2,10
+^FDQA,${etiqueta.id}^FS
+
+^FO50,950^BCN,100,Y,N,N
+^FD${etiqueta.id}^FS
+
+^FO250,1100^A0N,30,30^FDWMS PRO - ${etiqueta.id}^FS
+^XZ
+        `;
+        return zpl.trim();
     };
 
     // --- IMPORT ENGINE (ROBUST) ---
@@ -838,7 +918,8 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         pickingConfig, setPickingConfig,
         appConfig, setAppConfig,
         performFullPalletWriteOff, checkReplenishmentNeeds, validateMovement, reportPickingShortage,
-        importTemplates, saveImportTemplate, deleteImportTemplate, importLogs, processImportFile
+        importTemplates, saveImportTemplate, deleteImportTemplate, importLogs, processImportFile,
+        printerConfig, savePrinterConfig, generatePalletLabelZPL
     };
 
     return <WMSContext.Provider value={value}>{children}</WMSContext.Provider>;
