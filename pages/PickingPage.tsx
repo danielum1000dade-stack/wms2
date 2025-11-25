@@ -10,12 +10,12 @@ const PickingPage: React.FC = () => {
     const pickingGroups = useMemo(() => {
         const pickingMissions = missoes.filter(m => m.tipo === MissaoTipo.PICKING);
         
-        const grouped = pickingMissions.reduce((acc, m) => {
+        const grouped = pickingMissions.reduce<Record<string, { missions: Missao[], status: string }>>((acc, m) => {
             const pedidoId = m.pedidoId || 'SEM_PEDIDO';
             if (!acc[pedidoId]) acc[pedidoId] = { missions: [], status: 'Pendente' };
             acc[pedidoId].missions.push(m);
             return acc;
-        }, {} as Record<string, { missions: Missao[], status: string }>);
+        }, {});
 
         return Object.entries(grouped).map(([pid, group]) => {
             const pedido = pedidos.find(p => p.id === pid);

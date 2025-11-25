@@ -167,7 +167,7 @@ const defaultProfiles: Profile[] = [
     {
         id: ADMIN_PROFILE_ID,
         name: 'Admin',
-        permissions: Object.values(Permission).reduce((acc, p) => ({ ...acc, [p]: true }), {} as Record<string, boolean>)
+        permissions: Object.values(Permission).reduce<Record<string, boolean>>((acc, p) => ({ ...acc, [p]: true }), {})
     },
     {
         id: OPERADOR_PROFILE_ID,
@@ -248,7 +248,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             
             setIsOffline(false);
         } catch (error) {
-            console.warn("Backend offline ou inacessível. Ativando modo offline (localStorage).", error);
+            // Silently fail to offline mode without error spam
             setIsOffline(true);
         } finally {
             setIsLoading(false);
@@ -321,7 +321,66 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         );
         return true;
     };
-    const calculateAndApplyABCClassification = () => { return {success: true, message: "Calculado (Mock)"} };
+    
+    // --- ALGORITMO ABC REAL ---
+    const calculateAndApplyABCClassification = () => {
+        // 1. Coleta estatísticas de movimentação (Picking Concluído)
+        const movementCounts: Record<string, number> = {};
+        missoes.forEach(m => {
+            if (m.tipo === MissaoTipo.PICKING && m.status === 'Concluída') {
+                movementCounts[m.skuId] = (movementCounts[m.skuId] || 0) + m.quantidade;
+            }
+        });
+
+        // 2. Ordena SKUs por volume decrescente
+        const sortedSkuIds = Object.keys(movementCounts).sort((a, b) => movementCounts[b] - movementCounts[a]);
+        const totalMovimentado = sortedSkuIds.length;
+
+        if (totalMovimentado === 0) return { success: true, message: "Sem dados de movimentação suficientes para recalcular a curva ABC." };
+
+        // 3. Aplica Regra de Pareto (A=20%, B=30%, C=50%)
+        const limitA = Math.ceil(totalMovimentado * 0.2);
+        const limitB = Math.ceil(totalMovimentado * 0.5); // 20% + 30%
+
+        const updates: SKU[] = [];
+        
+        // SKUs com movimento
+        sortedSkuIds.forEach((skuId, index) => {
+            let newClass: 'A' | 'B' | 'C' = 'C';
+            if (index < limitA) newClass = 'A';
+            else if (index < limitB) newClass = 'B';
+
+            const sku = skus.find(s => s.id === skuId);
+            if (sku && sku.classificacaoABC !== newClass) {
+                updates.push({ ...sku, classificacaoABC: newClass });
+            }
+        });
+
+        // SKUs sem movimento viram C
+        skus.forEach(s => {
+            if (!movementCounts[s.id] && s.classificacaoABC !== 'C') {
+                updates.push({ ...s, classificacaoABC: 'C' });
+            }
+        });
+
+        // 4. Persiste as alterações
+        if (updates.length > 0) {
+            if (isOffline) {
+                setSkus(prev => prev.map(s => {
+                    const up = updates.find(u => u.id === s.id);
+                    return up || s;
+                }));
+            } else {
+                // Em produção, isso seria um endpoint batch. Aqui simulamos chamadas individuais.
+                updates.forEach(u => api.put(`/skus/${u.id}`, u).catch(e => console.error(e)));
+                // Refresh não imediato para não travar UI
+                setTimeout(refreshData, 1000);
+            }
+            return { success: true, message: `Curva ABC recalculada. ${updates.length} SKUs atualizados.` };
+        }
+
+        return { success: true, message: "Curva ABC atualizada. Nenhuma mudança de classificação necessária." };
+    };
 
     const addEndereco = async (endereco: Omit<Endereco, 'id'>) => { 
         await executeAction(
@@ -676,7 +735,66 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const finishConferencia = (cid: string, q: any) => { setConferencias(prev => prev.map(c => c.id === cid ? {...c, status: 'Concluída'} : c)); return {message: "Conferência Finalizada"}; };
     const logEvent = (actionType: AuditActionType, entity: AuditLog['entity'], entityId: string, details: string, metadata?: any) => { console.log(`[AUDIT] ${actionType} ${entity} ${entityId}: ${details}`); };
     const performFullPalletWriteOff = (etiquetaId: string, motivo: string, userId: string) => { return {success: true}; };
-    const checkReplenishmentNeeds = () => {};
+    
+    // --- AUTO-RESSUPRIMENTO INTELIGENTE ---
+    const checkReplenishmentNeeds = (skuId: string) => {
+        // 1. Verifica estoque no Picking
+        const pickingSlots = enderecos.filter(e => e.tipo === EnderecoTipo.PICKING);
+        const skuPickingStock = etiquetas.filter(e => 
+            e.skuId === skuId && 
+            pickingSlots.some(p => p.id === e.enderecoId)
+        );
+
+        const totalPickingQty = skuPickingStock.reduce((acc, e) => acc + (e.quantidadeCaixas || 0), 0);
+        const sku = skus.find(s => s.id === skuId);
+        
+        const maxCapacity = sku ? sku.totalCaixas : 100; 
+        // Pega configuração global ou usa padrão
+        const thresholdQty = maxCapacity * (appConfig.replenishmentThreshold / 100);
+
+        // 2. Se abaixo do nível, cria missão
+        if (totalPickingQty <= thresholdQty) {
+            // Busca o melhor pallet na armazenagem (FEFO)
+            const stockInStorage = etiquetas.filter(e => 
+                e.skuId === skuId && 
+                e.status === EtiquetaStatus.ARMAZENADA &&
+                enderecos.find(addr => addr.id === e.enderecoId)?.tipo === EnderecoTipo.ARMAZENAGEM
+            ).sort((a, b) => {
+                const dateA = a.validade ? new Date(a.validade).getTime() : 0;
+                const dateB = b.validade ? new Date(b.validade).getTime() : 0;
+                return dateA - dateB;
+            });
+
+            if (stockInStorage.length > 0) {
+                const sourcePallet = stockInStorage[0];
+                // Tenta achar um endereço de picking vazio ou com o mesmo SKU
+                const targetSlot = pickingSlots.find(e => e.status === EnderecoStatus.LIVRE) || pickingSlots.find(e => etiquetas.some(et => et.enderecoId === e.id && et.skuId === skuId));
+
+                if (targetSlot) {
+                    // Evita duplicar missão para o mesmo SKU
+                    const pendingMissions = missoes.filter(m => 
+                        m.tipo === MissaoTipo.REABASTECIMENTO && 
+                        m.skuId === skuId && 
+                        m.status !== 'Concluída'
+                    );
+
+                    if (pendingMissions.length === 0) {
+                        createMission({
+                            tipo: MissaoTipo.REABASTECIMENTO,
+                            etiquetaId: sourcePallet.id,
+                            skuId: skuId,
+                            quantidade: sourcePallet.quantidadeCaixas || 0,
+                            origemId: sourcePallet.enderecoId!,
+                            destinoId: targetSlot.id,
+                            prioridadeScore: 100 
+                        });
+                        logEvent(AuditActionType.REPLENISHMENT_TRIGGER, 'Missão', 'AUTO', `Ressuprimento automático gerado para SKU ${sku?.sku}`);
+                    }
+                }
+            }
+        }
+    };
+
     const reportPickingShortage = () => {};
     const saveImportTemplate = (t: any) => setImportTemplates(prev => [...prev, {...t, id: generateId()}]);
     const deleteImportTemplate = (id: string) => setImportTemplates(prev => prev.filter(t => t.id !== id));
