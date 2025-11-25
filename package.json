@@ -1,17 +1,21 @@
 {
   "name": "wms-pro-2025",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "setup": "node install.js"
+    "setup": "node install.js",
+    "setup:mysql": "node setup-mysql.js",
+    "server": "cd server && npm run dev",
+    "start:all": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
     "@heroicons/react": "^2.1.3",
+    "axios": "^1.6.8",
     "html5-qrcode": "^2.3.8",
     "jsbarcode": "^3.11.5",
     "qrious": "^4.0.2",
@@ -26,6 +30,7 @@
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.3",
     "typescript": "^5.2.2",
