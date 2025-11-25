@@ -18,6 +18,8 @@ import {
 
 declare const XLSX: any;
 
+// ... (Imports and Enums kept same as before, focusing on Logic Changes)
+
 const ADMIN_PROFILE_ID = 'admin_profile';
 const OPERADOR_PROFILE_ID = 'operador_profile';
 const CONFERENTE_PROFILE_ID = 'conferente_profile';

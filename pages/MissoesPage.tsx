@@ -6,7 +6,8 @@ import {
     CubeIcon, ArrowRightIcon, FlagIcon, TrashIcon, UserCircleIcon, 
     PlayIcon, CheckCircleIcon, ArrowUturnLeftIcon, FunnelIcon, 
     ExclamationTriangleIcon, ClockIcon, CameraIcon, XMarkIcon,
-    MapPinIcon, QrCodeIcon, HandRaisedIcon, LightBulbIcon
+    MapPinIcon, QrCodeIcon, HandRaisedIcon, LightBulbIcon,
+    Squares2X2Icon, Bars3Icon
 } from '@heroicons/react/24/outline';
 import BarcodeScanner from '../components/BarcodeScanner';
 

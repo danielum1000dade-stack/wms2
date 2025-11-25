@@ -157,7 +157,7 @@ const ApontamentoPage: React.FC = () => {
                     </div>
 
                     {isScanning && (
-                        <div className="mb-4 border rounded-lg overflow-hidden bg-black">
+                        <div className="mb-4 rounded-lg overflow-hidden">
                             <BarcodeScanner onScanSuccess={handleScanSuccess} />
                         </div>
                     )}

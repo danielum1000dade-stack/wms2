@@ -1,9 +1,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { XCircleIcon, ExclamationTriangleIcon, VideoCameraIcon } from '@heroicons/react/24/outline';
+import { XCircleIcon, ExclamationTriangleIcon, VideoCameraIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 
 // Declaração global para a lib carregada via CDN
-declare const Html5QrcodeScanner: any;
 declare const Html5Qrcode: any;
 
 interface BarcodeScannerProps {
@@ -20,105 +19,164 @@ const BarcodeScanner: React.FC<BarcodeScannerProps> = ({
     qrbox = 250 
 }) => {
     const scannerRegionId = "html5qr-code-full-region";
-    const scannerRef = useRef<any>(null);
     const [error, setError] = useState<string | null>(null);
-    const [isScanning, setIsScanning] = useState(true);
+    const [cameras, setCameras] = useState<any[]>([]);
+    const [selectedCameraId, setSelectedCameraId] = useState<string>('');
+    const [isScanning, setIsScanning] = useState(false);
+    const scannerRef = useRef<any>(null);
 
     useEffect(() => {
-        let scanner: any = null;
-
-        const startScanner = async () => {
-            // Verifica se a lib carregou
-            if (typeof Html5QrcodeScanner === 'undefined') {
-                setError("Biblioteca de scanner não carregada. Verifique a internet.");
-                return;
-            }
-
+        // Inicialização: Listar Câmeras
+        const initCameras = async () => {
             try {
-                // Configuração do Scanner com foco em performance e compatibilidade mobile
-                const config = { 
-                    fps: fps, 
-                    qrbox: { width: qrbox, height: qrbox },
-                    aspectRatio: 1.0,
-                    showTorchButtonIfSupported: true,
-                    showZoomSliderIfSupported: true,
-                    defaultZoomValueIfSupported: 2,
-                    rememberLastUsedCamera: true,
-                    supportedScanTypes: [0, 1] // QR Code e Barcode
-                };
+                if (typeof Html5Qrcode === 'undefined') {
+                    setError("Biblioteca de scanner não carregada. Verifique a conexão.");
+                    return;
+                }
 
-                // Instancia o scanner
-                scanner = new Html5QrcodeScanner(scannerRegionId, config, false);
-                scannerRef.current = scanner;
-
-                // Wrapper para evitar leituras duplicadas muito rápidas (Debounce)
-                let lastScanTime = 0;
-                const successWrapper = (decodedText: string, decodedResult: any) => {
-                    const now = Date.now();
-                    if (now - lastScanTime > 1500) { // 1.5s de intervalo entre leituras
-                        lastScanTime = now;
-                        // Feedback sonoro (se possível)
-                        try { window.navigator.vibrate(200); } catch(e){}
-                        onScanSuccess(decodedText);
-                    }
-                };
-
-                scanner.render(successWrapper, (errorMessage: string) => {
-                    // Filtra erros de "não encontrou código" para não poluir o log
-                    if (onScanFailure && !errorMessage.includes("No MultiFormat Readers")) {
-                        // onScanFailure(errorMessage);
-                    }
-                });
-
-            } catch (e: any) {
-                console.error("Erro crítico no scanner:", e);
-                setError("Não foi possível acessar a câmera. Verifique as permissões do navegador.");
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length) {
+                    setCameras(devices);
+                    // Tenta pegar a câmera traseira por padrão (geralmente a última ou com label 'back')
+                    const backCamera = devices.find((d: any) => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
+                    setSelectedCameraId(backCamera ? backCamera.id : devices[0].id);
+                } else {
+                    setError("Nenhuma câmera encontrada.");
+                }
+            } catch (err) {
+                console.error("Erro ao listar câmeras", err);
+                setError("Permissão de câmera negada ou erro no dispositivo.");
             }
         };
 
-        // Pequeno delay para garantir que o DOM da div alvo existe
-        const timer = setTimeout(startScanner, 100);
+        initCameras();
 
         return () => {
-            clearTimeout(timer);
-            if (scannerRef.current) {
-                try {
-                    scannerRef.current.clear().catch((e: any) => console.warn("Erro ao limpar scanner", e));
-                } catch (e) {
-                    console.warn("Erro ao desmontar scanner", e);
-                }
-            }
+            stopScanner();
         };
     }, []);
 
-    const handleManualRetry = () => {
-        setError(null);
-        setIsScanning(false);
-        setTimeout(() => setIsScanning(true), 100);
+    useEffect(() => {
+        if (selectedCameraId) {
+            startScanner(selectedCameraId);
+        }
+    }, [selectedCameraId]);
+
+    const startScanner = async (cameraId: string) => {
+        if (scannerRef.current) {
+            await stopScanner();
+        }
+
+        const html5QrCode = new Html5Qrcode(scannerRegionId);
+        scannerRef.current = html5QrCode;
+
+        try {
+            await html5QrCode.start(
+                cameraId, 
+                {
+                    fps: fps,
+                    qrbox: { width: qrbox, height: qrbox },
+                    aspectRatio: 1.0
+                },
+                (decodedText: string) => {
+                    // Success Callback
+                    // Debounce logic handled by caller or UI state change usually, 
+                    // but we can add a vibration here
+                    if (navigator.vibrate) navigator.vibrate(200);
+                    onScanSuccess(decodedText);
+                },
+                (errorMessage: string) => {
+                    // Failure Callback (Scanning...)
+                    if (onScanFailure) onScanFailure(errorMessage);
+                }
+            );
+            setIsScanning(true);
+            setError(null);
+        } catch (err) {
+            console.error("Erro ao iniciar scanner", err);
+            setError("Falha ao iniciar o vídeo. Tente outra câmera.");
+            setIsScanning(false);
+        }
     };
 
-    if (error) {
-        return (
-            <div className="flex flex-col items-center justify-center p-6 bg-red-50 rounded-lg border border-red-200 h-64">
-                <ExclamationTriangleIcon className="h-12 w-12 text-red-500 mb-2" />
-                <p className="text-red-800 font-bold text-center">{error}</p>
-                <button 
-                    onClick={handleManualRetry}
-                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                >
-                    Tentar Novamente
-                </button>
-            </div>
-        );
-    }
+    const stopScanner = async () => {
+        if (scannerRef.current) {
+            try {
+                if (scannerRef.current.isScanning) {
+                    await scannerRef.current.stop();
+                }
+                scannerRef.current.clear();
+            } catch (err) {
+                console.warn("Erro ao parar scanner", err);
+            }
+            scannerRef.current = null;
+            setIsScanning(false);
+        }
+    };
+
+    const handleCameraChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        setSelectedCameraId(e.target.value);
+    };
+
+    const handleManualRetry = () => {
+        setError(null);
+        if (selectedCameraId) {
+            startScanner(selectedCameraId);
+        } else {
+            window.location.reload();
+        }
+    };
 
     return (
-        <div className="w-full flex flex-col items-center justify-center bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-gray-700">
-            {isScanning && <div id={scannerRegionId} className="w-full bg-black"></div>}
-            <div className="w-full bg-gray-800 p-2 flex justify-between items-center text-gray-400 text-xs px-4">
-                <span className="flex items-center gap-1"><VideoCameraIcon className="h-3 w-3"/> Câmera Ativa</span>
-                <span>Posicione o código no quadrado</span>
+        <div className="w-full flex flex-col items-center bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-gray-700 relative">
+            
+            {/* Viewfinder Area */}
+            <div id={scannerRegionId} className="w-full bg-black min-h-[300px] relative">
+                {!isScanning && !error && (
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                        <ArrowPathIcon className="h-10 w-10 animate-spin" />
+                    </div>
+                )}
             </div>
+
+            {/* Controls Overlay */}
+            <div className="w-full bg-gray-800 p-3 border-t border-gray-700">
+                <div className="flex justify-between items-center gap-2">
+                    <div className="flex items-center text-green-400 text-xs font-bold">
+                        <VideoCameraIcon className="h-4 w-4 mr-1 animate-pulse"/>
+                        REC
+                    </div>
+                    
+                    {cameras.length > 1 && (
+                        <select 
+                            value={selectedCameraId} 
+                            onChange={handleCameraChange}
+                            className="bg-gray-700 text-white text-xs rounded border-none py-1 px-2 focus:ring-1 focus:ring-indigo-500 max-w-[150px]"
+                        >
+                            {cameras.map(cam => (
+                                <option key={cam.id} value={cam.id}>
+                                    {cam.label || `Camera ${cam.id.substr(0, 5)}...`}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                </div>
+            </div>
+
+            {/* Error Overlay */}
+            {error && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-900/90 z-10 p-6 text-center">
+                    <ExclamationTriangleIcon className="h-16 w-16 text-red-500 mb-4" />
+                    <p className="text-white font-bold text-lg mb-2">Erro na Câmera</p>
+                    <p className="text-gray-400 text-sm mb-6">{error}</p>
+                    <button 
+                        onClick={handleManualRetry}
+                        className="px-6 py-3 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition-colors shadow-lg flex items-center"
+                    >
+                        <ArrowPathIcon className="h-5 w-5 mr-2" /> Tentar Novamente
+                    </button>
+                </div>
+            )}
         </div>
     );
 };
