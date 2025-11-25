@@ -1,5 +1,7 @@
+
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
+import useLocalStorage from '../hooks/useLocalStorage';
 import { 
     SKU, Endereco, Recebimento, Etiqueta, Pedido, Missao, PalletConsolidado, 
     EtiquetaStatus, MissaoTipo, EnderecoTipo, Industria, Divergencia, 
@@ -9,13 +11,15 @@ import {
     Conferencia, ConferenciaItem, ConferenciaErro,
     AuditLog, AuditActionType,
     ImportTemplate, ImportLog,
-    PrinterConfig
+    PrinterConfig,
+    Permission
 } from '../types';
 
 // Interfaces
 declare const XLSX: any;
 
 const OPERADOR_PROFILE_ID = 'operador_profile';
+const ADMIN_PROFILE_ID = 'admin_profile';
 
 interface IASuggestion {
     endereco: Endereco;
@@ -37,7 +41,7 @@ interface ImportResult {
 
 interface WMSContextType {
     isLoading: boolean;
-    connectionError: string | null;
+    isOffline: boolean;
     
     skus: SKU[];
     enderecos: Endereco[];
@@ -159,40 +163,62 @@ interface WMSContextType {
 
 const WMSContext = createContext<WMSContextType | undefined>(undefined);
 
+const defaultProfiles: Profile[] = [
+    {
+        id: ADMIN_PROFILE_ID,
+        name: 'Admin',
+        permissions: Object.values(Permission).reduce((acc, p) => ({ ...acc, [p]: true }), {} as Record<string, boolean>)
+    },
+    {
+        id: OPERADOR_PROFILE_ID,
+        name: 'Operador',
+        permissions: {
+            [Permission.VIEW_DASHBOARD]: true,
+            [Permission.MANAGE_RECEBIMENTO]: true,
+            [Permission.MANAGE_APONTAMENTO]: true,
+            [Permission.MANAGE_ARMAZENAGEM]: true,
+            [Permission.MANAGE_PICKING]: true,
+            [Permission.MANAGE_INVENTORY]: true,
+            [Permission.VIEW_MISSOES]: true,
+            [Permission.BAIXA_PALLET]: false
+        }
+    }
+];
+
 export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     // Estados de Controle
     const [isLoading, setIsLoading] = useState(true);
-    const [connectionError, setConnectionError] = useState<string | null>(null);
+    const [isOffline, setIsOffline] = useState(false);
 
-    // Estados de Dados
-    const [skus, setSkus] = useState<SKU[]>([]);
-    const [enderecos, setEnderecos] = useState<Endereco[]>([]);
-    const [industrias, setIndustrias] = useState<Industria[]>([]);
-    const [recebimentos, setRecebimentos] = useState<Recebimento[]>([]);
-    const [etiquetas, setEtiquetas] = useState<Etiqueta[]>([]);
-    const [pedidos, setPedidos] = useState<Pedido[]>([]);
-    const [missoes, setMissoes] = useState<Missao[]>([]);
-    const [users, setUsers] = useState<User[]>([]);
-    const [profiles, setProfiles] = useState<Profile[]>([]);
-    const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+    // Estados de Dados (Persistidos Localmente como Fallback/Primary)
+    const [skus, setSkus] = useLocalStorage<SKU[]>('wms_skus', []);
+    const [enderecos, setEnderecos] = useLocalStorage<Endereco[]>('wms_enderecos', []);
+    const [industrias, setIndustrias] = useLocalStorage<Industria[]>('wms_industrias', []);
+    const [recebimentos, setRecebimentos] = useLocalStorage<Recebimento[]>('wms_recebimentos', []);
+    const [etiquetas, setEtiquetas] = useLocalStorage<Etiqueta[]>('wms_etiquetas', []);
+    const [pedidos, setPedidos] = useLocalStorage<Pedido[]>('wms_pedidos', []);
+    const [missoes, setMissoes] = useLocalStorage<Missao[]>('wms_missoes', []);
+    const [users, setUsers] = useLocalStorage<User[]>('wms_users', [{ id: 'admin_user', username: 'admin', fullName: 'Administrador', profileId: ADMIN_PROFILE_ID, status: UserStatus.ATIVO }]);
+    const [profiles, setProfiles] = useLocalStorage<Profile[]>('wms_profiles', defaultProfiles);
+    const [auditLogs, setAuditLogs] = useLocalStorage<AuditLog[]>('wms_audit_logs', []);
     
-    // Estados locais
-    const [divergencias, setDivergencias] = useState<Divergencia[]>([]);
-    const [tiposBloqueio, setTiposBloqueio] = useState<TipoBloqueio[]>([]);
-    const [importTemplates, setImportTemplates] = useState<ImportTemplate[]>([]);
-    const [importLogs, setImportLogs] = useState<ImportLog[]>([]);
-    const [inventoryCountSessions, setInventoryCountSessions] = useState<InventoryCountSession[]>([]);
-    const [inventoryCountItems, setInventoryCountItems] = useState<InventoryCountItem[]>([]);
-    const [palletsConsolidados, setPalletsConsolidados] = useState<PalletConsolidado[]>([]);
-    const [conferencias, setConferencias] = useState<Conferencia[]>([]);
-    const [conferenciaItems, setConferenciaItems] = useState<ConferenciaItem[]>([]);
-    const [conferenciaErros, setConferenciaErros] = useState<ConferenciaErro[]>([]);
+    // Estados puramente locais
+    const [divergencias, setDivergencias] = useLocalStorage<Divergencia[]>('wms_divergencias', []);
+    const [tiposBloqueio, setTiposBloqueio] = useLocalStorage<TipoBloqueio[]>('wms_tipos_bloqueio', []);
+    const [importTemplates, setImportTemplates] = useLocalStorage<ImportTemplate[]>('wms_import_templates', []);
+    const [importLogs, setImportLogs] = useLocalStorage<ImportLog[]>('wms_import_logs', []);
+    const [inventoryCountSessions, setInventoryCountSessions] = useLocalStorage<InventoryCountSession[]>('wms_inventory_sessions', []);
+    const [inventoryCountItems, setInventoryCountItems] = useLocalStorage<InventoryCountItem[]>('wms_inventory_items', []);
+    const [palletsConsolidados, setPalletsConsolidados] = useLocalStorage<PalletConsolidado[]>('wms_pallets_consolidados', []);
+    const [conferencias, setConferencias] = useLocalStorage<Conferencia[]>('wms_conferencias', []);
+    const [conferenciaItems, setConferenciaItems] = useLocalStorage<ConferenciaItem[]>('wms_conferencia_items', []);
+    const [conferenciaErros, setConferenciaErros] = useLocalStorage<ConferenciaErro[]>('wms_conferencia_erros', []);
     
-    const [appConfig, setAppConfig] = useState({ replenishmentThreshold: 25 });
-    const [pickingConfig, setPickingConfig] = useState({ allowPickingFromAnyAddress: false });
-    const [printerConfig, setPrinterConfig] = useState<PrinterConfig>({ type: 'PDF_FALLBACK' });
+    const [appConfig, setAppConfig] = useLocalStorage('wms_app_config', { replenishmentThreshold: 25 });
+    const [pickingConfig, setPickingConfig] = useLocalStorage('wms_picking_config', { allowPickingFromAnyAddress: false });
+    const [printerConfig, setPrinterConfig] = useLocalStorage<PrinterConfig>('wms_printer_config', { type: 'PDF_FALLBACK' });
 
-    // CARREGAR DADOS DO MYSQL AO INICIAR
+    // Tenta conectar ao backend, se falhar, ativa modo offline
     const refreshData = async () => {
         try {
             const [rSkus, rEnderecos, rIndustrias, rRecebimentos, rEtiquetas, rPedidos, rMissoes, rUsers, rProfiles, rAudit] = await Promise.all([
@@ -208,6 +234,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 api.get('/audit-logs')
             ]);
 
+            // Se sucesso, atualiza estado local com dados do servidor (Server Authority)
             setSkus(rSkus.data);
             setEnderecos(rEnderecos.data);
             setIndustrias(rIndustrias.data);
@@ -219,10 +246,10 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             setProfiles(rProfiles.data);
             setAuditLogs(rAudit.data);
             
-            setConnectionError(null);
+            setIsOffline(false);
         } catch (error) {
-            console.error("Erro ao conectar com o servidor MySQL.", error);
-            setConnectionError("Não foi possível conectar ao servidor (localhost:3001). Verifique se o Backend está rodando.");
+            console.warn("Backend offline ou inacessível. Ativando modo offline (localStorage).", error);
+            setIsOffline(true);
         } finally {
             setIsLoading(false);
         }
@@ -230,43 +257,108 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     useEffect(() => {
         refreshData();
-        const interval = setInterval(refreshData, 5000); 
+        // Tenta reconectar a cada 30s se estiver offline
+        const interval = setInterval(() => {
+            if (isOffline) refreshData();
+        }, 30000); 
         return () => clearInterval(interval);
-    }, []);
+    }, [isOffline]);
 
-    const generateId = () => new Date().getTime().toString();
+    const generateId = () => new Date().getTime().toString() + Math.random().toString(36).substr(2, 9);
 
-    // --- ACTIONS (WRAPPER SEGURO) ---
-    const safeApiCall = async (apiCall: () => Promise<any>) => {
-        try {
-            const result = await apiCall();
-            refreshData();
-            return result;
-        } catch (e) {
-            console.error("API Error", e);
-            throw e;
+    // --- ACTIONS WRAPPER ---
+    // Executa no backend se online, senão executa localmente
+    const executeAction = async <T,>(
+        apiCall: () => Promise<any>,
+        localAction: () => T | void
+    ): Promise<T | any> => {
+        if (isOffline) {
+            return localAction();
+        } else {
+            try {
+                const res = await apiCall();
+                refreshData(); // Sincroniza
+                return res.data || res;
+            } catch (e) {
+                console.error("Erro na API, executando localmente como fallback", e);
+                setIsOffline(true);
+                return localAction();
+            }
         }
     };
 
-    const addSku = async (sku: Omit<SKU, 'id'>) => { await safeApiCall(() => api.post('/skus', { ...sku, status: SKUStatus.ATIVO })); };
-    const addSkusBatch = async (newSkus: Omit<SKU, 'id'>[]) => { 
-        const skusWithStatus = newSkus.map(s => ({...s, status: SKUStatus.ATIVO, id: generateId()}));
-        await safeApiCall(() => api.post('/skus/batch', skusWithStatus)); 
+    // --- CRUD IMPLEMENTATIONS ---
+
+    const addSku = async (sku: Omit<SKU, 'id'>) => {
+        await executeAction(
+            () => api.post('/skus', { ...sku, status: SKUStatus.ATIVO }),
+            () => setSkus(prev => [...prev, { ...sku, id: generateId(), status: SKUStatus.ATIVO } as SKU])
+        );
     };
-    const updateSku = async (sku: SKU) => { await safeApiCall(() => api.put(`/skus/${sku.id}`, sku)); };
+    const addSkusBatch = async (newSkus: Omit<SKU, 'id'>[]) => { 
+        await executeAction(
+            () => {
+                const skusWithStatus = newSkus.map(s => ({...s, status: SKUStatus.ATIVO, id: generateId()}));
+                return api.post('/skus/batch', skusWithStatus);
+            },
+            () => {
+                const skusWithIds = newSkus.map(sku => ({ ...sku, id: generateId(), status: SKUStatus.ATIVO } as SKU));
+                setSkus(prev => [...prev, ...skusWithIds]);
+            }
+        );
+    };
+    const updateSku = async (sku: SKU) => { 
+        await executeAction(
+            () => api.put(`/skus/${sku.id}`, sku),
+            () => setSkus(prev => prev.map(s => s.id === sku.id ? sku : s))
+        ); 
+    };
     const deleteSku = async (id: string) => {
         if (etiquetas.some(e => e.skuId === id)) return false;
-        await safeApiCall(() => api.delete(`/skus/${id}`));
+        await executeAction(
+            () => api.delete(`/skus/${id}`),
+            () => setSkus(prev => prev.filter(s => s.id !== id))
+        );
         return true;
     };
-    const calculateAndApplyABCClassification = () => ({success: true, message: "Calculado"});
+    const calculateAndApplyABCClassification = () => { return {success: true, message: "Calculado (Mock)"} };
 
-    const addEndereco = async (endereco: Omit<Endereco, 'id'>) => { await safeApiCall(() => api.post('/enderecos', { ...endereco, status: EnderecoStatus.LIVRE })); };
-    const addEnderecosBatch = async (list: any[]) => { await safeApiCall(() => api.post('/enderecos/batch', list.map(e => ({...e, id: generateId(), status: EnderecoStatus.LIVRE})))); }
-    const updateEndereco = async (e: Endereco) => { await safeApiCall(() => api.put(`/enderecos/${e.id}`, e)); };
-    const deleteEndereco = async (id: string) => { await safeApiCall(() => api.delete(`/enderecos/${id}`)); };
+    const addEndereco = async (endereco: Omit<Endereco, 'id'>) => { 
+        await executeAction(
+            () => api.post('/enderecos', { ...endereco, status: EnderecoStatus.LIVRE }),
+            () => setEnderecos(prev => [...prev, {...endereco, id: generateId(), status: EnderecoStatus.LIVRE} as Endereco])
+        ); 
+    };
+    const addEnderecosBatch = async (list: any[]) => { 
+        await executeAction(
+            () => api.post('/enderecos/batch', list.map(e => ({...e, id: generateId(), status: EnderecoStatus.LIVRE}))),
+            () => setEnderecos(prev => [...prev, ...list.map(e => ({...e, id: generateId(), status: EnderecoStatus.LIVRE} as Endereco))])
+        );
+    }
+    const updateEndereco = async (e: Endereco) => { 
+        await executeAction(
+            () => api.put(`/enderecos/${e.id}`, e),
+            () => setEnderecos(prev => prev.map(end => end.id === e.id ? e : end))
+        ); 
+    };
+    const deleteEndereco = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/enderecos/${id}`),
+            () => setEnderecos(prev => prev.filter(e => e.id !== id))
+        ); 
+    };
 
     const addRecebimento = async (r: any, qtdEtiquetas: number) => {
+        const localAction = () => {
+            const nr = {...r, id: generateId(), dataHoraChegada: new Date().toISOString(), status: 'Aguardando', houveAvarias: false};
+            const ne = Array.from({length: qtdEtiquetas}, (_, i) => ({ id: `P${nr.notaFiscal}-${i+1}-${Math.floor(Math.random()*1000)}`, recebimentoId: nr.id, status: EtiquetaStatus.PENDENTE_APONTAMENTO } as Etiqueta));
+            setRecebimentos(prev => [...prev, nr as Recebimento]);
+            setEtiquetas(prev => [...prev, ...ne]);
+            return { newRecebimento: nr, newEtiquetas: ne };
+        };
+
+        if (isOffline) return localAction();
+
         try {
             const resRec = await api.post('/recebimentos', { ...r, dataHoraChegada: new Date().toISOString(), status: 'Aguardando' });
             const newRecebimento = resRec.data;
@@ -282,37 +374,86 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             refreshData();
             return { newRecebimento, newEtiquetas: novasEtiquetas };
         } catch (e) {
-            console.error(e);
-            return { newRecebimento: {} as any, newEtiquetas: [] };
+            setIsOffline(true);
+            return localAction();
         }
     };
 
-    const updateRecebimento = async (r: Recebimento) => { await safeApiCall(() => api.put(`/recebimentos/${r.id}`, r)); };
+    const updateRecebimento = async (r: Recebimento) => { 
+        await executeAction(
+            () => api.put(`/recebimentos/${r.id}`, r),
+            () => setRecebimentos(prev => prev.map(rec => rec.id === r.id ? r : rec))
+        ); 
+    };
 
-    const addEtiqueta = async (data: any) => { const res = await safeApiCall(() => api.post('/etiquetas', { id: `INV-${generateId()}`, ...data })); return res.data; };
-    const updateEtiqueta = async (e: Etiqueta) => { await safeApiCall(() => api.put(`/etiquetas/${e.id}`, e)); }
-    const deleteEtiqueta = async (id: string) => { await safeApiCall(() => api.delete(`/etiquetas/${id}`)); return {success: true}; };
+    const addEtiqueta = async (data: any) => { 
+        return await executeAction(
+            () => api.post('/etiquetas', { id: `INV-${generateId()}`, ...data }),
+            () => { const n = { id: `INV-${generateId()}`, status: EtiquetaStatus.ARMAZENADA, ...data} as Etiqueta; setEtiquetas(prev => [...prev, n]); return n; }
+        );
+    };
+    const updateEtiqueta = async (e: Etiqueta) => { 
+        await executeAction(
+            () => api.put(`/etiquetas/${e.id}`, e),
+            () => setEtiquetas(prev => prev.map(et => et.id === e.id ? e : et))
+        ); 
+    }
+    const deleteEtiqueta = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/etiquetas/${id}`),
+            () => setEtiquetas(prev => prev.filter(e => e.id !== id))
+        );
+        return {success: true}; 
+    };
     const deleteEtiquetas = async (ids: string[]) => { 
-        for (const id of ids) await api.delete(`/etiquetas/${id}`);
-        refreshData(); 
+        if (isOffline) {
+            setEtiquetas(prev => prev.filter(e => !ids.includes(e.id)));
+        } else {
+            for (const id of ids) await api.delete(`/etiquetas/${id}`);
+            refreshData(); 
+        }
         return {success: true}; 
     };
 
     const apontarEtiqueta = async (id: string, data: any) => {
         const sku = skus.find(s => s.id === data.skuId);
         if(!sku) return { success: false, message: "SKU Invalido" };
-        await safeApiCall(() => api.put(`/etiquetas/${id}`, { ...data, status: EtiquetaStatus.APONTADA, dataApontamento: new Date().toISOString() }));
+        await executeAction(
+            () => api.put(`/etiquetas/${id}`, { ...data, status: EtiquetaStatus.APONTADA, dataApontamento: new Date().toISOString() }),
+            () => setEtiquetas(prev => prev.map(e => e.id === id ? {...e, ...data, status: EtiquetaStatus.APONTADA, dataApontamento: new Date().toISOString()} : e))
+        );
         return { success: true };
     };
+    
     const armazenarEtiqueta = async (id: string, enderecoId: string) => {
         const end = enderecos.find(e => e.id === enderecoId);
         if(!end) return { success: false, message: "Endereço inválido" };
         const et = etiquetas.find(e => e.id === id);
         const val = validateMovement(et!, end);
         if (!val.success) return val;
-        if(et?.enderecoId) await api.put(`/enderecos/${et.enderecoId}`, { status: EnderecoStatus.LIVRE });
-        await api.put(`/enderecos/${enderecoId}`, { status: EnderecoStatus.OCUPADO });
-        await safeApiCall(() => api.put(`/etiquetas/${id}`, { enderecoId, status: EtiquetaStatus.ARMAZENADA, dataArmazenagem: new Date().toISOString() }));
+
+        const localLogic = () => {
+            setEnderecos(prev => prev.map(e => {
+                if(e.id === et?.enderecoId) return {...e, status: EnderecoStatus.LIVRE};
+                if(e.id === enderecoId) return {...e, status: EnderecoStatus.OCUPADO};
+                return e;
+            }));
+            setEtiquetas(prev => prev.map(e => e.id === id ? {...e, enderecoId, status: EtiquetaStatus.ARMAZENADA, dataArmazenagem: new Date().toISOString()} : e));
+        }
+
+        if (isOffline) {
+            localLogic();
+        } else {
+            try {
+                if(et?.enderecoId) await api.put(`/enderecos/${et.enderecoId}`, { status: EnderecoStatus.LIVRE });
+                await api.put(`/enderecos/${enderecoId}`, { status: EnderecoStatus.OCUPADO });
+                await api.put(`/etiquetas/${id}`, { enderecoId, status: EtiquetaStatus.ARMAZENADA, dataArmazenagem: new Date().toISOString() });
+                refreshData();
+            } catch (e) {
+                setIsOffline(true);
+                localLogic();
+            }
+        }
         return { success: true };
     };
 
@@ -335,38 +476,86 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return null;
     };
 
-    const addPedidos = async (lista: any[]) => { await safeApiCall(() => api.post('/pedidos/batch', lista)); };
-    const updatePedido = async (id: string, data: any) => { await safeApiCall(() => api.put(`/pedidos/${id}`, data)); };
+    const addPedidos = async (lista: any[]) => { 
+        await executeAction(
+            () => api.post('/pedidos/batch', lista),
+            () => setPedidos(prev => [...prev, ...lista])
+        ); 
+    };
+    const updatePedido = async (id: string, data: any) => { 
+        await executeAction(
+            () => api.put(`/pedidos/${id}`, data),
+            () => setPedidos(prev => prev.map(p => p.id === id ? {...p, ...data} : p))
+        ); 
+    };
     const reabrirSeparacao = (id: string, motivo: string) => { 
         updatePedido(id, { status: 'Pendente' });
+        // local logic for clearing missions
+        if(isOffline) setMissoes(prev => prev.filter(m => m.pedidoId !== id));
         return {success: true, message: "Pedido reaberto."}; 
     };
     
     const generateMissionsForPedido = (pid: string) => {
         const p = pedidos.find(ped => ped.id === pid);
         if(!p) return {success: false, message: "Pedido não encontrado"};
+        
+        const ms: Missao[] = [];
+        
         p.items.forEach(async (item: any) => {
             const sku = skus.find(s => s.sku === item.sku);
             if(sku) {
                 const stock = etiquetas.find(e => e.skuId === sku.id && e.status === EtiquetaStatus.ARMAZENADA);
                 if(stock && stock.enderecoId) {
-                    await api.post('/missoes', {
+                    const newMission = {
+                        id: generateId(),
                         tipo: MissaoTipo.PICKING, pedidoId: pid, etiquetaId: stock.id,
                         skuId: sku.id, quantidade: item.quantidadeCaixas, origemId: stock.enderecoId,
-                        destinoId: 'STAGE', status: 'Pendente'
-                    });
+                        destinoId: 'STAGE', status: 'Pendente', createdAt: new Date().toISOString()
+                    } as Missao;
+                    ms.push(newMission);
+                    
+                    if (!isOffline) {
+                        await api.post('/missoes', newMission);
+                    }
                 }
             }
         });
+        
+        if (isOffline) {
+            setMissoes(prev => [...prev, ...ms]);
+        }
+        
         updatePedido(pid, { status: 'Em Separação' });
         return { success: true, message: "Gerado" };
     };
 
-    const createMission = async (m: any) => { const res = await safeApiCall(() => api.post('/missoes', { ...m, status: 'Pendente' })); return res.data; };
+    const createMission = async (m: any) => { 
+        return await executeAction(
+            () => api.post('/missoes', { ...m, status: 'Pendente' }),
+            () => { const nm = {...m, id: generateId(), status: 'Pendente', createdAt: new Date().toISOString()} as Missao; setMissoes(prev => [...prev, nm]); return nm; }
+        );
+    };
     const createPickingMissions = (p: Pedido) => generateMissionsForPedido(p.id);
 
-    const updateMissionStatus = async (id: string, status: string, operadorId?: string) => {
-        await safeApiCall(() => api.put(`/missoes/${id}`, { status, operadorId }));
+    const updateMissionStatus = async (id: string, status: string, operadorId?: string, completedQuantity?: number) => {
+        await executeAction(
+            () => api.put(`/missoes/${id}`, { status, operadorId }),
+            () => {
+                setMissoes(prev => prev.map(m => {
+                    if(m.id === id) {
+                        // Logic side effects for local mode
+                        if(status === 'Concluída' && m.tipo === MissaoTipo.PICKING) {
+                            const e = etiquetas.find(et => et.id === m.etiquetaId);
+                            if(e) updateEtiqueta({...e, quantidadeCaixas: Math.max(0, (e.quantidadeCaixas||0) - (completedQuantity || m.quantidade))});
+                        } else if (status === 'Concluída' && m.tipo === MissaoTipo.REABASTECIMENTO) {
+                            armazenarEtiqueta(m.etiquetaId, m.destinoId);
+                        }
+                        return {...m, status, operadorId: operadorId || m.operadorId} as Missao;
+                    }
+                    return m;
+                }));
+            }
+        );
     };
 
     const assignNextMission = (uid: string) => {
@@ -375,27 +564,101 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return null;
     };
     
-    const deleteMission = async (id: string) => { await safeApiCall(() => api.delete(`/missoes/${id}`)); };
-    const revertMission = async (id: string) => { await safeApiCall(() => api.put(`/missoes/${id}`, {status: 'Pendente', operadorId: null})); };
+    const deleteMission = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/missoes/${id}`),
+            () => setMissoes(prev => prev.filter(m => m.id !== id))
+        ); 
+    };
+    const revertMission = async (id: string) => { 
+        await executeAction(
+            () => api.put(`/missoes/${id}`, {status: 'Pendente', operadorId: null}),
+            () => setMissoes(prev => prev.map(m => m.id === id ? {...m, status: 'Pendente'} as Missao : m))
+        ); 
+    };
     const revertMissionGroup = async (ids: string[]) => { for(const id of ids) await revertMission(id); };
     const assignFamilyMissionsToOperator = () => ({success: true});
     const getMyActivePickingGroup = (uid: string) => missoes.filter(m => m.operadorId === uid && m.status === 'Atribuída');
 
-    const addIndustria = async (i: any) => { await safeApiCall(() => api.post('/industrias', i)); };
-    const addIndustriasBatch = async (l: any[]) => { await safeApiCall(() => api.post('/industrias/batch', l)); };
-    const updateIndustria = async (i: any) => { await safeApiCall(() => api.put(`/industrias/${i.id}`, i)); };
-    const deleteIndustria = async (id: string) => { await safeApiCall(() => api.delete(`/industrias/${id}`)); return true; };
+    const addIndustria = async (i: any) => { 
+        await executeAction(
+            () => api.post('/industrias', i),
+            () => setIndustrias(prev => [...prev, {...i, id: generateId()}])
+        ); 
+    };
+    const addIndustriasBatch = async (l: any[]) => { 
+        await executeAction(
+            () => api.post('/industrias/batch', l),
+            () => setIndustrias(prev => [...prev, ...l.map(i => ({...i, id: generateId()}))])
+        ); 
+    };
+    const updateIndustria = async (i: any) => { 
+        await executeAction(
+            () => api.put(`/industrias/${i.id}`, i),
+            () => setIndustrias(prev => prev.map(ind => ind.id === i.id ? i : ind))
+        ); 
+    };
+    const deleteIndustria = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/industrias/${id}`),
+            () => setIndustrias(prev => prev.filter(i => i.id !== id))
+        );
+        return true; 
+    };
     
-    const addUser = async (u: any) => { await safeApiCall(() => api.post('/users', u)); return {success:true}; };
-    const registerUser = async (u: any) => { await safeApiCall(() => api.post('/users', {...u, profileId: OPERADOR_PROFILE_ID, status: UserStatus.ATIVO})); return {success:true}; };
-    const updateUser = async (u: any) => { await safeApiCall(() => api.put(`/users/${u.id}`, u)); return {success:true}; };
-    const deleteUser = async (id: string) => { await safeApiCall(() => api.delete(`/users/${id}`)); return {success:true}; };
+    const addUser = async (u: any) => { 
+        await executeAction(
+            () => api.post('/users', u),
+            () => setUsers(prev => [...prev, {...u, id: generateId()}])
+        );
+        return {success:true}; 
+    };
+    const registerUser = async (u: any) => { 
+        const userData = {...u, profileId: OPERADOR_PROFILE_ID, status: UserStatus.ATIVO};
+        await executeAction(
+            () => api.post('/users', userData),
+            () => setUsers(prev => [...prev, {...userData, id: generateId()}])
+        );
+        return {success:true}; 
+    };
+    const updateUser = async (u: any) => { 
+        await executeAction(
+            () => api.put(`/users/${u.id}`, u),
+            () => setUsers(prev => prev.map(usr => usr.id === u.id ? u : usr))
+        );
+        return {success:true}; 
+    };
+    const deleteUser = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/users/${id}`),
+            () => setUsers(prev => prev.filter(u => u.id !== id))
+        );
+        return {success:true}; 
+    };
 
-    const addProfile = async (p: any) => { await safeApiCall(() => api.post('/profiles', p)); return {success:true}; };
-    const updateProfile = async (p: any) => { await safeApiCall(() => api.put(`/profiles/${p.id}`, p)); return {success:true}; };
-    const deleteProfile = async (id: string) => { await safeApiCall(() => api.delete(`/profiles/${id}`)); return {success:true}; };
+    const addProfile = async (p: any) => { 
+        await executeAction(
+            () => api.post('/profiles', p),
+            () => setProfiles(prev => [...prev, {...p, id: generateId()}])
+        );
+        return {success:true}; 
+    };
+    const updateProfile = async (p: any) => { 
+        await executeAction(
+            () => api.put(`/profiles/${p.id}`, p),
+            () => setProfiles(prev => prev.map(pr => pr.id === p.id ? p : pr))
+        );
+        return {success:true}; 
+    };
+    const deleteProfile = async (id: string) => { 
+        await executeAction(
+            () => api.delete(`/profiles/${id}`),
+            () => setProfiles(prev => prev.filter(p => p.id !== id))
+        );
+        return {success:true}; 
+    };
 
-    // Mock functions for local state not yet in DB
+    // Funções locais (que ainda não têm backend ou não precisam)
     const addPalletConsolidado = (p:any) => { setPalletsConsolidados(prev=>[...prev, {...p, id: generateId()}]); return p; };
     const getDivergenciasByRecebimento = (rid: string) => divergencias.filter(d => d.recebimentoId === rid);
     const addDivergencia = async (d: any) => setDivergencias(prev => [...prev, {...d, id: generateId(), createdAt: new Date().toISOString()}]);
@@ -423,7 +686,7 @@ export const WMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const processTransportData = async () => ({success: true, message: "OK"});
 
     const value = {
-        isLoading, connectionError,
+        isLoading, isOffline, connectionError: isOffline ? 'Modo Offline' : null,
         skus, addSku, addSkusBatch, updateSku, deleteSku,
         enderecos, addEndereco, addEnderecosBatch, updateEndereco, deleteEndereco,
         industrias, addIndustria, addIndustriasBatch, updateIndustria, deleteIndustria,
